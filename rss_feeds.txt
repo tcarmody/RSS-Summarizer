@@ -1,0 +1,73 @@
+# AI and Tech RSS Feeds from iCloud Subscriptions
+# Last updated: 2024-12-15
+
+# AI Companies and Research
+http://fetchrss.com/rss/66e1e8e9e59acb3bdb0c4ab266e1e8d72b7c75c63b0ba0d3.xml  # Custom AI Feed
+https://rss.app/feeds/6851Bh8P3Z7zwBor.xml  # Meta AI Blog
+http://feeds.feedburner.com/miriblog  # Miri Blog
+https://stability.ai/blog?format=rss  # Stability AI Blog
+https://deepmind.com/blog/rss.xml  # Google DeepMind Blog
+https://huggingface.co/blog/feed.xml  # Hugging Face Blog
+https://jina.ai/feed.rss  # Jina AI Blog
+https://lmsys.org/rss.xml  # LMSYS Org Blog
+https://about.fb.com/feed/  # Facebook Newsroom
+https://news.microsoft.com/source/feed/  # Microsoft News
+https://blogs.nvidia.com/feed/  # NVIDIA Blog
+https://developer.nvidia.com/blog/feed/  # NVIDIA Developer Blog
+https://jamesg.blog/openai.xml  # OpenAI Blog (Unofficial)
+https://github.blog/feed/  # GitHub Blog
+https://www.oreilly.com/radar/topics/ai-ml/feed/index.xml  # O'Reilly AI/ML Radar
+https://www.artificialintelligence-news.com/feed/  # Artificial Intelligence News
+
+# News and Media
+https://apnews.com/hub/artificial-intelligence.rss  # Associated Press AI News
+https://www.ft.com/artificial-intelligence?format=rss  # Financial Times AI Coverage
+https://www.theguardian.com/technology/artificialintelligenceai/rss  # The Guardian AI Tech
+https://www.sciencedaily.com/rss/computers_math/artificial_intelligence.xml  # Science Daily AI
+https://dailyai.com/feed/  # Daily AI News
+https://spectrum.ieee.org/feeds/topic/artificial-intelligence.rss  # IEEE Spectrum AI
+https://blog.ml.cmu.edu/feed/  # Carnegie Mellon ML Blog
+https://www.maginative.com/rss/  # Maginative AI News
+https://www.technologyreview.com/feed/  # MIT Technology Review
+https://www.nytimes.com/svc/collections/v1/publish/https://www.nytimes.com/spotlight/artificial-intelligence/rss.xml  # NYT AI Coverage
+https://the-decoder.com/feed/  # The Decoder AI News
+https://www.thestack.technology/latest/rss/  # The Stack Tech News
+https://pub.towardsai.net/feed  # Towards AI Publication
+https://towardsdatascience.com/feed  # Towards Data Science
+https://feeds.feedburner.com/venturebeat/SZYF  # VentureBeat
+https://www.wired.com/feed/tag/ai/latest/rss  # Wired AI Tag
+https://rss.app/feeds/tia0gUGHHTgNGSA6.xml  # AI Omnibus Feed
+https://news.google.com/rss/topics/CAAqJggKIiBDQkFTRWdvSUwyMHZNRGRqTVhZU0FtVnVHZ0pWVXlnQVAB/sections/CAQiQ0NCQVNMQW9JTDIwdk1EZGpNWFlTQW1WdUdnSlZVeUlOQ0FRYUNRb0hMMjB2TUcxcmVpb0pFZ2N2YlM4d2JXdDZLQUEqKggAKiYICiIgQ0JBU0Vnb0lMMjB2TURkak1YWVNBbVZ1R2dKVlV5Z0FQAVAB?hl=en-US&gl=US&ceid=US%3Aen&oc=11  # Google News AI
+
+# Academic and Research Institutions
+https://machinelearning.apple.com/rss.xml  # Apple Machine Learning
+https://www.cs.cmu.edu/news/feeds/feed.rss  # CMU Computer Science News
+https://blog.research.google/atom.xml  # Google Research Blog
+https://www.deepmind.com/blog/rss.xml  # DeepMind Blog
+https://www.marktechpost.com/feed/  # MarktechPost AI
+https://www.csail.mit.edu/rss.xml  # MIT CSAIL News
+https://news.mit.edu/topic/mitartificial-intelligence2-rss.xml  # MIT AI News
+https://bair.berkeley.edu/blog/feed.xml  # BAIR Blog
+http://ai.stanford.edu/blog/feed.xml  # Stanford AI Lab Blog
+https://blog.tensorflow.org/feeds/posts/default  # TensorFlow Blog
+
+# Tech and General News
+https://a16z.com/feed  # Andreessen Horowitz Blog
+https://feeds.arstechnica.com/arstechnica/index  # Ars Technica
+https://feeds.bloomberg.com/technology/news.rss  # Bloomberg Technology
+https://feeds.businessinsider.com/custom/all  # Business Insider
+https://rss.nytimes.com/services/xml/rss/nyt/Technology.xml  # NYT Technology
+https://www.economist.com/science-and-technology/rss.xml  # The Economist Science and Tech
+https://theconversation.com/us/technology/articles.atom  # The Conversation US Tech
+http://rss.sciam.com/sciam/technology  # Scientific American Tech
+https://techcrunch.com/feed/  # TechCrunch
+https://www.techmeme.com/feed.xml  # Techmeme
+https://www.euractiv.com/sections/digital/feed/  # Euractiv Digital
+https://www.reutersagency.com/feed/?best-topics=tech  # Reuters Tech
+https://apnews.com/technology.rss  # AP Technology
+https://www.theinformation.com/feed  # The Information
+https://www.theverge.com/rss/index.xml  # The Verge
+https://www.vox.com/rss/index.xml  # Vox
+https://feeds.washingtonpost.com/rss/business/technology?itid=lk_inline_manual_31  # Washington Post Tech
+https://www.wired.com/feed/rss  # Wired
+https://feeds.a.dj.com/rss/RSSWSJD.xml  # WSJ Tech
