@@ -1386,7 +1386,7 @@ Please summarize the following text in this style:
         try:
             # Fetch article content
             content, soup = self.fetch_article_content(url)
-            
+
             if not content or not soup:
                 logger.error(f"Failed to fetch content for {url}")
                 return None
@@ -2214,269 +2214,206 @@ Please summarize the following text in this style:
             return [[article] for article in articles]
 
     @track_performance()
-    def generate_html_output(self, clusters, output_file='rss_output.html'):
-        """
-        Generate a beautiful HTML output for the clustered articles.
-        
-        Creates a modern, responsive HTML page that displays:
-        - Article clusters with combined summaries
-        - Links to original sources
-        - Publication dates and sources
-        - Clean, readable typography
-        
-        Args:
-            clusters (list): List of article clusters
-            output_file (str): Path to output HTML file
-        """
+    def generate_html_output(self, clusters, output_dir='output'):
+        """Generate HTML output for the clusters."""
         try:
-            # Get current time in Eastern timezone
-            eastern = pytz.timezone('US/Eastern')
-            current_time = datetime.now(eastern)
+            # Create output directory if it doesn't exist
+            os.makedirs(output_dir, exist_ok=True)
             
-            # Start HTML content with modern styling
-            html_content = f"""
+            # Generate timestamp for filename
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            output_file = os.path.join(output_dir, f'rss_summary_{timestamp}.html')
+            
+            # Start HTML content
+            html_content = '''
             <!DOCTYPE html>
-            <html lang="en">
+            <html>
             <head>
                 <meta charset="UTF-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>RSS Feed Summary - {current_time.strftime('%B %d, %Y')}</title>
-                <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+                <title>RSS Feed Summary</title>
                 <style>
-                    :root {{
-                        --primary-color: #2563eb;
-                        --secondary-color: #3b82f6;
-                        --background-color: #f8fafc;
-                        --text-color: #1e293b;
-                        --border-color: #e2e8f0;
-                    }}
-                    
-                    body {{
-                        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+                    body {
+                        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
                         line-height: 1.6;
-                        color: var(--text-color);
-                        background: var(--background-color);
-                        margin: 0;
-                        padding: 20px;
-                    }}
-                    
-                    .container {{
                         max-width: 1200px;
                         margin: 0 auto;
                         padding: 20px;
-                    }}
-                    
-                    header {{
-                        text-align: center;
-                        margin-bottom: 40px;
-                    }}
-                    
-                    h1 {{
-                        font-size: 2.5rem;
-                        font-weight: 600;
-                        color: var(--primary-color);
-                        margin-bottom: 10px;
-                    }}
-                    
-                    .timestamp {{
-                        color: #64748b;
-                        font-size: 1.1rem;
-                    }}
-                    
-                    .cluster {{
+                        background: #f5f5f5;
+                    }
+                    .cluster {
                         background: white;
-                        border-radius: 12px;
-                        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+                        border-radius: 8px;
+                        padding: 20px;
                         margin-bottom: 30px;
-                        padding: 25px;
-                        border: 1px solid var(--border-color);
-                    }}
-                    
-                    .cluster-header {{
+                        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                    }
+                    .cluster-header {
                         margin-bottom: 20px;
-                    }}
-                    
-                    .cluster-title {{
-                        font-size: 1.5rem;
-                        font-weight: 600;
-                        color: var(--primary-color);
-                        margin-bottom: 15px;
-                    }}
-                    
-                    .cluster-summary {{
-                        font-size: 1.1rem;
-                        line-height: 1.7;
-                        color: var(--text-color);
+                    }
+                    .cluster-title {
+                        color: #1a1a1a;
+                        margin: 0 0 10px 0;
+                        font-size: 24px;
+                    }
+                    .cluster-summary {
+                        color: #333;
+                        font-size: 16px;
                         margin-bottom: 20px;
-                    }}
-                    
-                    .sources {{
-                        border-top: 1px solid var(--border-color);
+                        line-height: 1.8;
+                    }
+                    .sources {
+                        border-top: 1px solid #eee;
                         padding-top: 15px;
-                    }}
-                    
-                    .source-item {{
-                        margin-bottom: 12px;
-                    }}
-                    
-                    .source-link {{
-                        color: var(--secondary-color);
+                    }
+                    .sources h3 {
+                        color: #666;
+                        font-size: 18px;
+                        margin: 0 0 10px 0;
+                    }
+                    .source-list {
+                        display: flex;
+                        flex-wrap: wrap;
+                        gap: 10px;
+                    }
+                    .source-item {
+                        background: #f8f8f8;
+                        border-radius: 4px;
+                        padding: 10px;
+                    }
+                    .source-title {
+                        color: #0066cc;
                         text-decoration: none;
                         font-weight: 500;
-                        transition: color 0.2s;
-                    }}
-                    
-                    .source-link:hover {{
-                        color: var(--primary-color);
+                    }
+                    .source-title:hover {
                         text-decoration: underline;
-                    }}
-                    
-                    .source-meta {{
-                        font-size: 0.9rem;
-                        color: #64748b;
-                        margin-top: 4px;
-                    }}
-                    
-                    @media (max-width: 768px) {{
-                        body {{
-                            padding: 10px;
-                        }}
-                        
-                        .container {{
-                            padding: 10px;
-                        }}
-                        
-                        h1 {{
-                            font-size: 2rem;
-                        }}
-                        
-                        .cluster {{
-                            padding: 20px;
-                        }}
-                    }}
+                    }
+                    .source-info {
+                        color: #666;
+                        font-size: 14px;
+                        margin-top: 5px;
+                    }
+                    .metadata {
+                        color: #888;
+                        font-size: 14px;
+                        margin-top: 10px;
+                    }
                 </style>
             </head>
             <body>
-                <div class="container">
-                    <header>
-                        <h1>RSS Feed Summary</h1>
-                        <div class="timestamp">Generated on {current_time.strftime('%B %d, %Y at %I:%M %p %Z')}</div>
-                    </header>
-            """
+                <h1>RSS Feed Summary</h1>
+                <p class="metadata">Generated on: ''' + datetime.now().strftime('%Y-%m-%d %H:%M:%S') + '''</p>
+            '''
             
             # Process each cluster
             for cluster in clusters:
-                if not cluster:
-                    continue
-                
-                # Get cluster summary
-                summary = None
-                if len(cluster) > 1:
-                    summary = self.generate_cluster_summary(cluster)
-                else:
-                    summary = cluster[0].get('summary', {})
-                
-                if not summary:
-                    continue
-                
-                if isinstance(summary, str):
-                    try:
-                        summary = json.loads(summary)
-                    except:
-                        summary = {'headline': 'No Headline', 'summary': summary}
-                
-                # Start cluster section
-                html_content += f"""
+                if len(cluster) == 1:
+                    # Single article - display as before
+                    article = cluster[0]
+                    summary_dict = article.get('summary', {})
+                    
+                    if isinstance(summary_dict, str):
+                        try:
+                            summary_dict = json.loads(summary_dict)
+                        except:
+                            summary_dict = {'headline': 'No Headline', 'summary': summary_dict}
+                    
+                    headline = summary_dict.get('headline', article.get('title', 'No headline available'))
+                    summary_text = summary_dict.get('summary', 'No summary available')
+                    model = summary_dict.get('model', 'Unknown')
+                    timestamp = summary_dict.get('timestamp')
+                    timestamp_str = datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S') if timestamp else 'Unknown'
+                    
+                    html_content += f'''
                     <div class="cluster">
                         <div class="cluster-header">
-                            <h2 class="cluster-title">{summary.get('headline', 'No Headline')}</h2>
-                            <div class="cluster-summary">{summary.get('summary', 'No summary available.')}</div>
+                            <h2 class="cluster-title">{html.escape(headline)}</h2>
+                            <div class="cluster-summary">{html.escape(summary_text)}</div>
                         </div>
                         <div class="sources">
-                            <h3>Sources:</h3>
+                            <h3>Source:</h3>
                             <div class="source-list">
-                """
-                
-                # Add source links
-                if 'sources' in summary:
-                    for source in summary['sources']:
-                        title = source.get('title', 'No title')
-                        link = source.get('link', '#')
-                        source_name = source.get('source', 'Unknown source')
-                        pub_date = source.get('pub_date', '')
-                        
-                        # Format publication date
-                        if pub_date:
-                            try:
-                                if isinstance(pub_date, str):
-                                    pub_date = parser.parse(pub_date)
-                                pub_date = pub_date.astimezone(eastern)
-                                pub_date_str = pub_date.strftime('%B %d, %Y at %I:%M %p %Z')
-                            except:
-                                pub_date_str = pub_date
-                        else:
-                            pub_date_str = 'Date unknown'
-                        
-                        html_content += f"""
                                 <div class="source-item">
-                                    <a href="{link}" class="source-link" target="_blank">{title}</a>
-                                    <div class="source-meta">
-                                        {source_name} • {pub_date_str}
+                                    <a href="{html.escape(article['link'])}" class="source-title" target="_blank">
+                                        {html.escape(article.get('source_name', 'Unknown Source'))}
+                                    </a>
+                                    <div class="source-info">
+                                        Published: {html.escape(article.get('published', 'Unknown'))}
                                     </div>
                                 </div>
-                        """
-                else:
-                    # Handle single article case
-                    for article in cluster:
-                        title = article.get('title', 'No title')
-                        link = article.get('link', '#')
-                        source = article.get('source', article.get('feed_source', 'Unknown source'))
-                        pub_date = article.get('published', '')
-                        
-                        # Format publication date
-                        if pub_date:
-                            try:
-                                if isinstance(pub_date, str):
-                                    pub_date = parser.parse(pub_date)
-                                pub_date = pub_date.astimezone(eastern)
-                                pub_date_str = pub_date.strftime('%B %d, %Y at %I:%M %p %Z')
-                            except:
-                                pub_date_str = pub_date
-                        else:
-                            pub_date_str = 'Date unknown'
-                        
-                        html_content += f"""
-                                <div class="source-item">
-                                    <a href="{link}" class="source-link" target="_blank">{title}</a>
-                                    <div class="source-meta">
-                                        {source} • {pub_date_str}
-                                    </div>
-                                </div>
-                        """
-                
-                html_content += """
                             </div>
                         </div>
+                        <div class="metadata">
+                            Model: {html.escape(model)} | Generated: {html.escape(timestamp_str)}
+                        </div>
                     </div>
-                """
+                    '''
+                else:
+                    # Multiple similar articles - generate combined summary
+                    summary = self.generate_cluster_summary(cluster)
+                    if summary:
+                        if isinstance(summary, str):
+                            try:
+                                summary = json.loads(summary)
+                            except:
+                                summary = {'headline': 'No Headline', 'summary': summary}
+                        
+                        headline = summary.get('headline', 'Related Articles')
+                        summary_text = summary.get('summary', 'No summary available')
+                        model = summary.get('model', 'Unknown')
+                        timestamp = summary.get('timestamp')
+                        timestamp_str = datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S') if timestamp else 'Unknown'
+                        
+                        html_content += f'''
+                        <div class="cluster">
+                            <div class="cluster-header">
+                                <h2 class="cluster-title">{html.escape(headline)}</h2>
+                                <div class="cluster-summary">{html.escape(summary_text)}</div>
+                            </div>
+                            <div class="sources">
+                                <h3>Sources:</h3>
+                                <div class="source-list">
+                        '''
+                        
+                        # Add each source
+                        for article in cluster:
+                            html_content += f'''
+                                <div class="source-item">
+                                    <a href="{html.escape(article['link'])}" class="source-title" target="_blank">
+                                        {html.escape(article.get('source_name', 'Unknown Source'))}
+                                    </a>
+                                    <div class="source-info">
+                                        Published: {html.escape(article.get('published', 'Unknown'))}
+                                    </div>
+                                </div>
+                            '''
+                        
+                        html_content += f'''
+                                </div>
+                            </div>
+                            <div class="metadata">
+                                Model: {html.escape(model)} | Generated: {html.escape(timestamp_str)}
+                            </div>
+                        </div>
+                        '''
             
             # Close HTML
-            html_content += """
-                </div>
+            html_content += '''
             </body>
             </html>
-            """
+            '''
             
             # Write to file
             with open(output_file, 'w', encoding='utf-8') as f:
                 f.write(html_content)
             
-            logging.info(f"✅ Generated HTML output: {output_file}")
+            return output_file
             
         except Exception as e:
             logging.error(f"Error generating HTML output: {str(e)}")
-            logging.debug(traceback.format_exc())
-
+            return None
+            
     def generate_cluster_summary(self, cluster):
         """
         Generate a combined summary for a cluster of similar articles.
