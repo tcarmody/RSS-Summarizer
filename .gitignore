@@ -1,0 +1,35 @@
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Log files
+logs/
+*.log
+
+# Cache directory
+.cache/
+cache/
+
+# Performance logs
+performance_logs/
+
+# Output files
+output/
+*.html
+
+# Environment files
+.env
+.env.*
+!.env.template
+
+# macOS system files
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
