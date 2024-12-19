@@ -624,6 +624,30 @@ class RSSReader:
         self.model = "claude-3-haiku-20240307"
         self.cache = SummaryCache(cache_dir=cache_dir)
         self._sentence_transformer = None  # Lazy-loaded for performance
+        
+        # Configure batch processing
+        self.batch_size = 25
+        self.batch_delay = 15  # seconds between batches
+        
+        # List of domains that are likely to be paywalled
+        self.protected_domains = [
+            'wsj.com',
+            'nytimes.com',
+            'bloomberg.com',
+            'ft.com',
+            'economist.com'
+        ]
+        
+        # Configure user agent and headers
+        self.headers = {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        
+        # Initialize feed processing settings
+        self.config = RSSReaderConfig()
+        
+        # Initialize feed cache
+        self.feed_cache = FeedCache()
     
     def _get_sentence_transformer(self):
         """
@@ -2371,6 +2395,48 @@ Please summarize the following text in this style:
         except Exception as e:
             logging.error(f"Error generating HTML output: {str(e)}")
             logging.debug(traceback.format_exc())
+
+    def generate_cluster_summary(self, cluster):
+        """
+        Generate a combined summary for a cluster of similar articles.
+        
+        Args:
+            cluster (List[Dict]): List of similar articles to summarize together
+            
+        Returns:
+            Dict: Combined summary including headline, summary text, and sources
+        """
+        if not cluster:
+            return None
+            
+        try:
+            # Combine all article texts
+            combined_text = ""
+            for article in cluster:
+                title = article.get('title', '')
+                content = article.get('content', '')
+                if content:
+                    combined_text += f"{title}\n{content}\n\n"
+            
+            # Generate a new summary for the combined text
+            if combined_text:
+                summary = self.summarize_text(combined_text)
+                if summary:
+                    # Add the list of sources to the summary
+                    sources = []
+                    for article in cluster:
+                        sources.append({
+                            'title': article.get('title', 'No title'),
+                            'source': article.get('feed_source', 'Unknown source'),
+                            'link': article.get('link', '#'),
+                            'pub_date': article.get('pub_date', '')
+                        })
+                    summary['sources'] = sources
+                    return summary
+                    
+        except Exception as e:
+            logging.error(f"Error generating cluster summary: {str(e)}")
+            return None
 
 def main():
     """
