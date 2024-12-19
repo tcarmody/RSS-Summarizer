@@ -702,7 +702,8 @@ class RSSReader:
                                 parsed_feed.feed.get('title') or
                                 parsed_feed.feed.get('subtitle') or
                                 parsed_feed.feed.get('description') or
-                                parsed_feed.feed.get('link')
+                                parsed_feed.feed.get('link') or
+                                self.get_publication_name(url)
                             )
                             
                             # Clean up feed title if it's a URL
@@ -710,7 +711,7 @@ class RSSReader:
                                 feed_title = self.get_publication_name(feed_title)
                             
                             # Add feed source to the entry
-                            entry['feed_source'] = feed_title or self.get_publication_name(url)
+                            entry['feed_source'] = feed_title
                             all_articles.append(entry)
                         except Exception as e:
                             logging.error(f"❌ Error processing entry from {url}: {e}")
@@ -918,6 +919,14 @@ class RSSReader:
             # Get publication date
             published = entry.get('published', entry.get('updated', 'No date available'))
             
+            # Extract source name
+            source = entry.get('feed_source')
+            if not source:
+                source = self.get_publication_name(url, feed_entry=entry)
+                if source == "Unknown source":
+                    # Try harder to get a source name
+                    source = self.get_publication_name(url)
+        
             return {
                 'title': entry.get('title', 'No title available'),
                 'link': url,
@@ -925,7 +934,7 @@ class RSSReader:
                 'content': content,
                 'summary': summary if summary else None,  # Store the entire summary dictionary
                 'model': summary.get('model', 'Fallback') if summary else 'Fallback',
-                'source': entry.get('feed_source', self.get_publication_name(url))  # Add feed source
+                'source': source  # Use the improved source extraction
             }
             
         except Exception as e:
@@ -1191,7 +1200,8 @@ Please summarize the following text in this style:
                             parsed_feed.feed.get('title') or
                             parsed_feed.feed.get('subtitle') or
                             parsed_feed.feed.get('description') or
-                            parsed_feed.feed.get('link')
+                            parsed_feed.feed.get('link') or
+                            self.get_publication_name(url)
                         )
                         
                         # Clean up feed title if it's a URL
@@ -1199,7 +1209,7 @@ Please summarize the following text in this style:
                             feed_title = self.get_publication_name(feed_title)
                         
                         # Add feed source to the entry
-                        entry['feed_source'] = feed_title or self.get_publication_name(url)
+                        entry['feed_source'] = feed_title
                         all_articles.append(entry)
                     except Exception as e:
                         print(f"❌ Error processing entry from {url}: {e}")
@@ -1319,6 +1329,14 @@ Please summarize the following text in this style:
             # Get publication date
             published = entry.get('published', entry.get('updated', 'No date available'))
             
+            # Extract source name
+            source = entry.get('feed_source')
+            if not source:
+                source = self.get_publication_name(url, feed_entry=entry)
+                if source == "Unknown source":
+                    # Try harder to get a source name
+                    source = self.get_publication_name(url)
+        
             return {
                 'title': entry.get('title', 'No title available'),
                 'link': url,
@@ -1326,7 +1344,7 @@ Please summarize the following text in this style:
                 'content': content,
                 'summary': summary if summary else None,  # Store the entire summary dictionary
                 'model': summary.get('model', 'Fallback') if summary else 'Fallback',
-                'source': entry.get('feed_source', self.get_publication_name(url))  # Add feed source
+                'source': source  # Use the improved source extraction
             }
             
         except Exception as e:
@@ -1735,43 +1753,62 @@ Please summarize the following text in this style:
                     return meta.get('content')
         
         # Fallback to URL-based extraction
-        domain = urlparse(url).netloc
-        # Remove www. if present
-        if domain.startswith('www.'):
-            domain = domain[4:]
-        
-        # Split by dots and get the main part
-        parts = domain.split('.')
-        if len(parts) >= 2:
-            # Handle cases like 'theverge.com', 'techcrunch.com'
-            if parts[0] in ['the', 'a', 'an']:
-                return f"{parts[0].capitalize()}{parts[1].capitalize()}"
-            # Handle cases like 'blogs.nvidia.com'
-            elif len(parts) > 2 and parts[0] in ['blog', 'blogs', 'news']:
-                return parts[1].capitalize()
-            else:
-                # Try to make a readable name from the domain
-                name = parts[0]
-                # Split by common separators
-                if '-' in name:
-                    words = name.split('-')
-                    return ' '.join(word.capitalize() for word in words)
-                # Handle camelCase
-                elif any(c.isupper() for c in name[1:]):
-                    words = []
-                    current_word = name[0]
-                    for char in name[1:]:
-                        if char.isupper():
-                            words.append(current_word)
-                            current_word = char
-                        else:
-                            current_word += char
-                    words.append(current_word)
-                    return ' '.join(word.capitalize() for word in words)
+        try:
+            domain = urlparse(url).netloc
+            # Remove www. if present
+            if domain.startswith('www.'):
+                domain = domain[4:]
+            
+            # Split by dots and get the main part
+            parts = domain.split('.')
+            if len(parts) >= 2:
+                # Handle common domains directly
+                known_domains = {
+                    'engadget': 'Engadget',
+                    'techcrunch': 'TechCrunch',
+                    'forbes': 'Forbes',
+                    'gizbot': 'GizBot',
+                    'digit': 'Digit',
+                    'timesnownews': 'Times Now News',
+                    'gadgets360': 'Gadgets 360',
+                    'verdict': 'Verdict'
+                }
+                
+                if parts[0] in known_domains:
+                    return known_domains[parts[0]]
+                
+                # Handle cases like 'theverge.com', 'techcrunch.com'
+                if parts[0] in ['the', 'a', 'an']:
+                    return f"{parts[0].capitalize()}{parts[1].capitalize()}"
+                # Handle cases like 'blogs.nvidia.com'
+                elif len(parts) > 2 and parts[0] in ['blog', 'blogs', 'news']:
+                    return parts[1].capitalize()
                 else:
-                    return name.capitalize()
-        
-        return domain.capitalize()
+                    # Try to make a readable name from the domain
+                    name = parts[0]
+                    # Split by common separators
+                    if '-' in name:
+                        words = name.split('-')
+                        return ' '.join(word.capitalize() for word in words)
+                    # Handle camelCase
+                    elif any(c.isupper() for c in name[1:]):
+                        words = []
+                        current_word = name[0]
+                        for char in name[1:]:
+                            if char.isupper():
+                                words.append(current_word)
+                                current_word = char
+                            else:
+                                current_word += char
+                        words.append(current_word)
+                        return ' '.join(word.capitalize() for word in words)
+                    else:
+                        return name.capitalize()
+            
+            return domain.capitalize()
+        except Exception as e:
+            logging.warning(f"Error extracting publication name from URL {url}: {e}")
+            return "Unknown source"
     
     def fetch_url_with_headers(self, url):
         """
@@ -2350,7 +2387,7 @@ Please summarize the following text in this style:
                 for article in cluster:
                     title = article.get('title', 'No title')
                     link = article.get('link', '#')
-                    source = article.get('feed_source', 'Unknown source')
+                    source = article.get('source', article.get('feed_source', 'Unknown source'))
                     pub_date = article.get('published', '')
                     
                     # Format publication date
@@ -2427,7 +2464,7 @@ Please summarize the following text in this style:
                     for article in cluster:
                         sources.append({
                             'title': article.get('title', 'No title'),
-                            'source': article.get('feed_source', 'Unknown source'),
+                            'source': article.get('source', article.get('feed_source', 'Unknown source')),
                             'link': article.get('link', '#'),
                             'pub_date': article.get('pub_date', '')
                         })
