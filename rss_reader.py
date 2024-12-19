@@ -998,22 +998,22 @@ class RSSReader:
                     # Single article - display as before
                     article = cluster[0]
                     summary_dict = article.get('summary', {})
-                    if isinstance(summary_dict, dict):
-                        if 'summary' in summary_dict and isinstance(summary_dict['summary'], dict):
-                            summary_data = summary_dict['summary']
-                        else:
-                            summary_data = summary_dict
-                        
-                        summary_text = summary_data.get('summary', 'No summary available')
-                        headline = summary_data.get('headline', article.get('title', 'No headline available'))
-                        model = summary_data.get('model', 'Unknown')
-                        timestamp = summary_data.get('timestamp')
-                        timestamp_str = datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S') if timestamp else 'Unknown'
+                    if isinstance(summary_dict, dict) and 'summary' in summary_dict:
+                        summary_data = summary_dict['summary']
                     else:
-                        summary_text = 'No summary available'
-                        headline = article.get('title', 'No headline available')
-                        model = 'Unknown'
-                        timestamp_str = 'Unknown'
+                        summary_data = summary_dict
+                    
+                    if isinstance(summary_data, str):
+                        try:
+                            summary_data = json.loads(summary_data)
+                        except:
+                            summary_data = {'headline': 'No Headline', 'summary': summary_data}
+                    
+                    summary_text = summary_data.get('summary', 'No summary available')
+                    headline = summary_data.get('headline', article.get('title', 'No headline available'))
+                    model = summary_data.get('model', 'Unknown')
+                    timestamp = summary_data.get('timestamp')
+                    timestamp_str = datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S') if timestamp else 'Unknown'
                     
                     html_content += f'''
                     <div class="article">
@@ -1044,14 +1044,20 @@ class RSSReader:
                     '''
                 else:
                     # Multiple similar articles - generate combined summary
-                    cluster_summary = self.generate_cluster_summary(cluster)
-                    if cluster_summary:
-                        summary_text = cluster_summary.get('summary', 'No summary available')
-                        headline = cluster_summary.get('headline', 'Related Articles')
-                        model = cluster_summary.get('model', 'Unknown')
-                        timestamp = cluster_summary.get('timestamp')
+                    summary = self.generate_cluster_summary(cluster)
+                    if summary:
+                        if isinstance(summary, str):
+                            try:
+                                summary = json.loads(summary)
+                            except:
+                                summary = {'headline': 'No Headline', 'summary': summary}
+                        
+                        summary_text = summary.get('summary', 'No summary available')
+                        headline = summary.get('headline', 'Related Articles')
+                        model = summary.get('model', 'Unknown')
+                        timestamp = summary.get('timestamp')
                         timestamp_str = datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S') if timestamp else 'Unknown'
-                        sources = cluster_summary.get('sources', [])
+                        sources = summary.get('sources', [])
                         
                         html_content += f'''
                         <div class="article cluster">
@@ -1319,7 +1325,7 @@ Please summarize the following text in this style:
             
             # Clean and summarize content if needed
             summary = None
-            if len(content) > 50:  # Lower threshold to ensure we get summaries
+            if content and len(content) > 50:  # Lower threshold to ensure we get summaries
                 try:
                     summary = self.summarize_text(content, entry.get('title'))
                     logging.info(f"Generated summary for article: {entry.get('title', 'Unknown title')}")
@@ -2373,6 +2379,12 @@ Please summarize the following text in this style:
                 if not summary:
                     continue
                 
+                if isinstance(summary, str):
+                    try:
+                        summary = json.loads(summary)
+                    except:
+                        summary = {'headline': 'No Headline', 'summary': summary}
+                
                 # Start cluster section
                 html_content += f"""
                     <div class="cluster">
@@ -2381,37 +2393,69 @@ Please summarize the following text in this style:
                             <div class="cluster-summary">{summary.get('summary', 'No summary available.')}</div>
                         </div>
                         <div class="sources">
+                            <h3>Sources:</h3>
+                            <div class="source-list">
                 """
                 
                 # Add source links
-                for article in cluster:
-                    title = article.get('title', 'No title')
-                    link = article.get('link', '#')
-                    source = article.get('source', article.get('feed_source', 'Unknown source'))
-                    pub_date = article.get('published', '')
-                    
-                    # Format publication date
-                    if pub_date:
-                        try:
-                            if isinstance(pub_date, str):
-                                pub_date = parser.parse(pub_date)
-                            pub_date = pub_date.astimezone(eastern)
-                            pub_date_str = pub_date.strftime('%B %d, %Y at %I:%M %p %Z')
-                        except:
-                            pub_date_str = pub_date
-                    else:
-                        pub_date_str = 'Date unknown'
-                    
-                    html_content += f"""
-                            <div class="source-item">
-                                <a href="{link}" class="source-link" target="_blank">{title}</a>
-                                <div class="source-meta">
-                                    {source} • {pub_date_str}
+                if 'sources' in summary:
+                    for source in summary['sources']:
+                        title = source.get('title', 'No title')
+                        link = source.get('link', '#')
+                        source_name = source.get('source', 'Unknown source')
+                        pub_date = source.get('pub_date', '')
+                        
+                        # Format publication date
+                        if pub_date:
+                            try:
+                                if isinstance(pub_date, str):
+                                    pub_date = parser.parse(pub_date)
+                                pub_date = pub_date.astimezone(eastern)
+                                pub_date_str = pub_date.strftime('%B %d, %Y at %I:%M %p %Z')
+                            except:
+                                pub_date_str = pub_date
+                        else:
+                            pub_date_str = 'Date unknown'
+                        
+                        html_content += f"""
+                                <div class="source-item">
+                                    <a href="{link}" class="source-link" target="_blank">{title}</a>
+                                    <div class="source-meta">
+                                        {source_name} • {pub_date_str}
+                                    </div>
                                 </div>
-                            </div>
-                    """
+                        """
+                else:
+                    # Handle single article case
+                    for article in cluster:
+                        title = article.get('title', 'No title')
+                        link = article.get('link', '#')
+                        source = article.get('source', article.get('feed_source', 'Unknown source'))
+                        pub_date = article.get('published', '')
+                        
+                        # Format publication date
+                        if pub_date:
+                            try:
+                                if isinstance(pub_date, str):
+                                    pub_date = parser.parse(pub_date)
+                                pub_date = pub_date.astimezone(eastern)
+                                pub_date_str = pub_date.strftime('%B %d, %Y at %I:%M %p %Z')
+                            except:
+                                pub_date_str = pub_date
+                        else:
+                            pub_date_str = 'Date unknown'
+                        
+                        html_content += f"""
+                                <div class="source-item">
+                                    <a href="{link}" class="source-link" target="_blank">{title}</a>
+                                    <div class="source-meta">
+                                        {source} • {pub_date_str}
+                                    </div>
+                                </div>
+                        """
                 
                 html_content += """
+                            </div>
                         </div>
                     </div>
                 """
