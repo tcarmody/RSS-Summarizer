@@ -10476,3 +10476,673 @@ http.client.InvalidURL: URL can't contain control characters. '/feed/rss  ' (fou
 2024-12-17 17:52:01,790 - anthropic._base_client - INFO - Retrying request to /v1/messages in 3.000000 seconds
 2024-12-17 17:52:01,793 - httpx - INFO - HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 429 Too Many Requests"
 2024-12-17 17:52:02,285 - httpx - INFO - HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2025-01-02 13:15:44,239 - ERROR: Error testing Readwise token: Environment variable READWISE_TOKEN is not set. Please set it in your .env file.
+2025-01-02 13:15:44,239 - INFO: 🚀 Initializing RSS Reader...
+2025-01-02 13:15:44,271 - WARNING: spaCy model not found. Installing now...
+2025-01-02 13:15:44,292 - ERROR: ❌ Error in main: No module named 'spacy'
+2025-01-02 13:16:18,447 - INFO: Successfully loaded Readwise token from .env
+2025-01-02 13:16:18,661 - ERROR: Error testing Readwise token: 404 Client Error: Not Found for url: https://readwise.io/api/v3/auth/test
+2025-01-02 13:16:18,662 - INFO: 🚀 Initializing RSS Reader...
+2025-01-02 13:16:18,677 - WARNING: spaCy model not found. Installing now...
+2025-01-02 13:16:18,696 - ERROR: ❌ Error in main: No module named 'spacy'
+2025-01-02 13:17:00,003 - INFO: Successfully loaded Readwise token from .env
+2025-01-02 13:17:00,161 - INFO: Successfully authenticated with Readwise API (token is valid)
+2025-01-02 13:17:00,162 - INFO: 🚀 Initializing RSS Reader...
+2025-01-02 13:17:00,178 - WARNING: spaCy model not found. Installing now...
+2025-01-02 13:17:00,196 - ERROR: ❌ Error in main: No module named 'spacy'
+2025-01-02 13:18:14,981 - INFO: Successfully loaded Readwise token from .env
+2025-01-02 13:18:15,106 - INFO: Successfully authenticated with Readwise API (token is valid)
+2025-01-02 13:18:15,107 - INFO: 🚀 Initializing RSS Reader...
+2025-01-02 13:18:15,706 - INFO: 📊 Processing feeds and clustering articles...
+2025-01-02 13:18:15,707 - INFO: 📊 Total Feeds: 1
+2025-01-02 13:18:15,707 - INFO: 📦 Batch Size: 25
+2025-01-02 13:18:15,707 - INFO: ⏱️  Batch Delay: 15 seconds
+2025-01-02 13:18:15,707 - INFO: 🔄 Total Batches: 1
+2025-01-02 13:18:15,707 - INFO: 
+🔄 Processing Batch 1/1: Feeds 1 to 1
+2025-01-02 13:18:15,994 - INFO: 📰 Found 25 articles in feed: https://rss.app/feeds/tia0gUGHHTgNGSA6.xml
+2025-01-02 13:18:15,994 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:18:15,994 - WARNING: Error extracting publication name from URL https://www.theverge.com/2025/1/2/24334251/microsoft-copilot-plus-mini-pcs-ces-2025-notepad: name 'urlparse' is not defined
+2025-01-02 13:18:15,995 - WARNING: Error extracting publication name from URL https://www.theverge.com/2025/1/2/24334251/microsoft-copilot-plus-mini-pcs-ces-2025-notepad: name 'urlparse' is not defined
+2025-01-02 13:18:15,995 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:18:15,995 - WARNING: Error extracting publication name from URL https://fortune.com/2025/01/02/cybersecurity-leaders-scramble-to-educate-employees-on-generative-ai-threats-eye-on-ai/: name 'urlparse' is not defined
+2025-01-02 13:18:15,995 - WARNING: Error extracting publication name from URL https://fortune.com/2025/01/02/cybersecurity-leaders-scramble-to-educate-employees-on-generative-ai-threats-eye-on-ai/: name 'urlparse' is not defined
+2025-01-02 13:18:15,995 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:18:15,995 - WARNING: Error extracting publication name from URL https://www.investopedia.com/what-analysts-think-of-nvidia-stock-ahead-of-ceo-jensen-huang-s-ces-keynote-8768126: name 'urlparse' is not defined
+2025-01-02 13:18:15,995 - WARNING: Error extracting publication name from URL https://www.investopedia.com/what-analysts-think-of-nvidia-stock-ahead-of-ceo-jensen-huang-s-ces-keynote-8768126: name 'urlparse' is not defined
+2025-01-02 13:18:15,995 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:18:15,995 - WARNING: Error extracting publication name from URL https://www.forbes.com/sites/johnwerner/2025/01/02/5-big-advances-last-year-in-artificial-intelligence/: name 'urlparse' is not defined
+2025-01-02 13:18:15,995 - WARNING: Error extracting publication name from URL https://www.forbes.com/sites/johnwerner/2025/01/02/5-big-advances-last-year-in-artificial-intelligence/: name 'urlparse' is not defined
+2025-01-02 13:18:15,995 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:18:15,995 - WARNING: Error extracting publication name from URL https://www.zdnet.com/home-and-office/home-entertainment/samsung-just-unveiled-a-sleek-new-oled-smart-monitor-and-its-not-just-for-gamers/: name 'urlparse' is not defined
+2025-01-02 13:18:15,995 - WARNING: Error extracting publication name from URL https://www.zdnet.com/home-and-office/home-entertainment/samsung-just-unveiled-a-sleek-new-oled-smart-monitor-and-its-not-just-for-gamers/: name 'urlparse' is not defined
+2025-01-02 13:18:15,995 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:18:15,995 - WARNING: Error extracting publication name from URL https://finance.yahoo.com/news/wall-street-analysts-think-soundhound-143018226.html: name 'urlparse' is not defined
+2025-01-02 13:18:15,995 - WARNING: Error extracting publication name from URL https://finance.yahoo.com/news/wall-street-analysts-think-soundhound-143018226.html: name 'urlparse' is not defined
+2025-01-02 13:18:15,995 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:18:15,995 - WARNING: Error extracting publication name from URL https://finance.yahoo.com/news/nvidia-eyes-bullish-breakout-190-142505732.html: name 'urlparse' is not defined
+2025-01-02 13:18:15,995 - WARNING: Error extracting publication name from URL https://finance.yahoo.com/news/nvidia-eyes-bullish-breakout-190-142505732.html: name 'urlparse' is not defined
+2025-01-02 13:18:15,995 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:18:15,995 - WARNING: Error extracting publication name from URL https://finance.yahoo.com/video/next-5-years-look-good-140133811.html: name 'urlparse' is not defined
+2025-01-02 13:18:15,995 - WARNING: Error extracting publication name from URL https://finance.yahoo.com/video/next-5-years-look-good-140133811.html: name 'urlparse' is not defined
+2025-01-02 13:18:15,995 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:18:15,995 - WARNING: Error extracting publication name from URL https://techcrunch.com/2025/01/02/apheris-rethinks-the-ai-data-bottleneck-in-life-science-with-federated-computing/: name 'urlparse' is not defined
+2025-01-02 13:18:15,995 - WARNING: Error extracting publication name from URL https://techcrunch.com/2025/01/02/apheris-rethinks-the-ai-data-bottleneck-in-life-science-with-federated-computing/: name 'urlparse' is not defined
+2025-01-02 13:18:15,995 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:18:15,995 - WARNING: Error extracting publication name from URL https://techcrunch.com/2025/01/02/2025-will-be-the-year-climate-tech-learns-to-love-ai/: name 'urlparse' is not defined
+2025-01-02 13:18:15,995 - WARNING: Error extracting publication name from URL https://techcrunch.com/2025/01/02/2025-will-be-the-year-climate-tech-learns-to-love-ai/: name 'urlparse' is not defined
+2025-01-02 13:18:15,995 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:18:15,995 - WARNING: Error extracting publication name from URL https://www.pymnts.com/fraud-attack/2025/ai-fuels-reported-rise-in-polished-phishing-scams/: name 'urlparse' is not defined
+2025-01-02 13:18:15,995 - WARNING: Error extracting publication name from URL https://www.pymnts.com/fraud-attack/2025/ai-fuels-reported-rise-in-polished-phishing-scams/: name 'urlparse' is not defined
+2025-01-02 13:18:15,995 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:18:15,995 - WARNING: Error extracting publication name from URL https://www.theverge.com/2025/1/2/24334049/asus-samsung-msi-27-inch-4k-oled-240hz-monitors: name 'urlparse' is not defined
+2025-01-02 13:18:15,995 - WARNING: Error extracting publication name from URL https://www.theverge.com/2025/1/2/24334049/asus-samsung-msi-27-inch-4k-oled-240hz-monitors: name 'urlparse' is not defined
+2025-01-02 13:18:15,995 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:18:15,995 - WARNING: Error extracting publication name from URL https://hbr.org/2025/01/6-ways-ai-changed-business-in-2024-according-to-executives: name 'urlparse' is not defined
+2025-01-02 13:18:15,995 - WARNING: Error extracting publication name from URL https://hbr.org/2025/01/6-ways-ai-changed-business-in-2024-according-to-executives: name 'urlparse' is not defined
+2025-01-02 13:18:15,995 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:18:15,995 - WARNING: Error extracting publication name from URL https://www.investors.com/news/technology/nvidia-stock-nvda-ai-chip-lead-sustainable/: name 'urlparse' is not defined
+2025-01-02 13:18:15,995 - WARNING: Error extracting publication name from URL https://www.investors.com/news/technology/nvidia-stock-nvda-ai-chip-lead-sustainable/: name 'urlparse' is not defined
+2025-01-02 13:18:15,995 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:18:15,995 - WARNING: Error extracting publication name from URL https://www.yahoo.com/news/m/29f8fffc-7bec-354b-a7b3-a974a2a022c5/why-nvidia-s-ai-chip-lead-is.html: name 'urlparse' is not defined
+2025-01-02 13:18:15,995 - WARNING: Error extracting publication name from URL https://www.yahoo.com/news/m/29f8fffc-7bec-354b-a7b3-a974a2a022c5/why-nvidia-s-ai-chip-lead-is.html: name 'urlparse' is not defined
+2025-01-02 13:18:15,995 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:18:15,995 - WARNING: Error extracting publication name from URL https://seekingalpha.com/news/4391915-nvidia-rises-as-bofa-keeps-top-pick-rating-on-chip-giant-ahead-of-ces: name 'urlparse' is not defined
+2025-01-02 13:18:15,995 - WARNING: Error extracting publication name from URL https://seekingalpha.com/news/4391915-nvidia-rises-as-bofa-keeps-top-pick-rating-on-chip-giant-ahead-of-ces: name 'urlparse' is not defined
+2025-01-02 13:18:15,995 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:18:15,995 - WARNING: Error extracting publication name from URL https://www.coindesk.com/markets/2025/01/02/northern-data-is-well-positioned-to-take-advantage-of-the-ai-boom-canaccord: name 'urlparse' is not defined
+2025-01-02 13:18:15,995 - WARNING: Error extracting publication name from URL https://www.coindesk.com/markets/2025/01/02/northern-data-is-well-positioned-to-take-advantage-of-the-ai-boom-canaccord: name 'urlparse' is not defined
+2025-01-02 13:18:15,995 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:18:15,995 - WARNING: Error extracting publication name from URL https://finance.yahoo.com/news/alibaba-leverages-scale-deep-pockets-121627710.html: name 'urlparse' is not defined
+2025-01-02 13:18:15,995 - WARNING: Error extracting publication name from URL https://finance.yahoo.com/news/alibaba-leverages-scale-deep-pockets-121627710.html: name 'urlparse' is not defined
+2025-01-02 13:18:15,995 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:18:15,996 - WARNING: Error extracting publication name from URL https://www.newsweek.com/china-russia-forge-major-tech-collaboration-challenge-us-2008502: name 'urlparse' is not defined
+2025-01-02 13:18:15,996 - WARNING: Error extracting publication name from URL https://www.newsweek.com/china-russia-forge-major-tech-collaboration-challenge-us-2008502: name 'urlparse' is not defined
+2025-01-02 13:18:15,996 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:18:15,996 - WARNING: Error extracting publication name from URL https://fortune.com/2025/01/02/kobold-mining-jeff-bezos-bill-gates-investment-round-copper-lithium/: name 'urlparse' is not defined
+2025-01-02 13:18:15,996 - WARNING: Error extracting publication name from URL https://fortune.com/2025/01/02/kobold-mining-jeff-bezos-bill-gates-investment-round-copper-lithium/: name 'urlparse' is not defined
+2025-01-02 13:18:15,996 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:18:15,996 - WARNING: Error extracting publication name from URL https://videocardz.com/newz/mpg-272qr-qd-oled-x50-is-first-27-inch-500hz-monitor-with-dp2-1a-and-vesa-clearmr-21000-specs: name 'urlparse' is not defined
+2025-01-02 13:18:15,996 - WARNING: Error extracting publication name from URL https://videocardz.com/newz/mpg-272qr-qd-oled-x50-is-first-27-inch-500hz-monitor-with-dp2-1a-and-vesa-clearmr-21000-specs: name 'urlparse' is not defined
+2025-01-02 13:18:15,996 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:18:15,996 - WARNING: Error extracting publication name from URL https://cointelegraph.com/news/crypto-whale-up-11-5-m-ai-token-19-days: name 'urlparse' is not defined
+2025-01-02 13:18:15,996 - WARNING: Error extracting publication name from URL https://cointelegraph.com/news/crypto-whale-up-11-5-m-ai-token-19-days: name 'urlparse' is not defined
+2025-01-02 13:18:15,996 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:18:15,996 - WARNING: Error extracting publication name from URL https://www.newscientist.com/article/2462356-ai-chatbots-fail-to-diagnose-patients-by-talking-with-them/: name 'urlparse' is not defined
+2025-01-02 13:18:15,996 - WARNING: Error extracting publication name from URL https://www.newscientist.com/article/2462356-ai-chatbots-fail-to-diagnose-patients-by-talking-with-them/: name 'urlparse' is not defined
+2025-01-02 13:18:15,996 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:18:15,996 - WARNING: Error extracting publication name from URL https://medicalxpress.com/news/2024-12-ai-doctors-real-world-communication.html: name 'urlparse' is not defined
+2025-01-02 13:18:15,996 - WARNING: Error extracting publication name from URL https://medicalxpress.com/news/2024-12-ai-doctors-real-world-communication.html: name 'urlparse' is not defined
+2025-01-02 13:18:15,996 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:18:15,996 - WARNING: Error extracting publication name from URL https://www.techmonitor.ai/technology/cybersecurity/hhs-hipaa-security-proposal: name 'urlparse' is not defined
+2025-01-02 13:18:15,996 - WARNING: Error extracting publication name from URL https://www.techmonitor.ai/technology/cybersecurity/hhs-hipaa-security-proposal: name 'urlparse' is not defined
+2025-01-02 13:18:15,996 - INFO: ⏱️  Batch 1 Processing Time: 0.29 seconds
+2025-01-02 13:18:15,996 - INFO: 
+🎉 Processing Complete!
+2025-01-02 13:18:15,996 - INFO: 📊 Total Articles Processed: 25
+2025-01-02 13:18:16,144 - INFO: ❌ Failed Articles: 0
+2025-01-02 13:18:16,144 - INFO: ⏱️  Total Processing Time: 0.29 seconds
+2025-01-02 13:18:16,144 - INFO: 📈 Average Processing Time per Article: 0.01 seconds
+2025-01-02 13:18:16,144 - INFO: Performance: process_feeds took 0.4374 seconds (CPU: 11.0%, Memory: 2113536 bytes)
+2025-01-02 13:18:16,145 - INFO: Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+2025-01-02 13:18:16,145 - INFO: Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+2025-01-02 13:18:16,992 - INFO: Use pytorch device_name: mps
+2025-01-02 13:18:17,934 - INFO: Performance: cluster_similar_articles took 1.7885 seconds (CPU: 167.5%, Memory: 188104704 bytes)
+2025-01-02 13:18:17,934 - ERROR: Error generating HTML for article: name 'font' is not defined
+2025-01-02 13:18:17,934 - INFO: ✅ Output written to /Users/tim/workspace/GitHub/RSS-Summarizer/output/rss_summary_20250102_131817.html
+2025-01-02 13:18:17,934 - INFO: Performance: process_feeds_with_clustering took 2.2278 seconds (CPU: 136.7%, Memory: 190218240 bytes)
+2025-01-02 13:18:17,934 - WARNING: ⚠️ No articles found or processed
+2025-01-02 13:19:06,848 - INFO: Successfully loaded Readwise token from .env
+2025-01-02 13:19:07,025 - INFO: Successfully authenticated with Readwise API (token is valid)
+2025-01-02 13:19:07,026 - INFO: 🚀 Initializing RSS Reader...
+2025-01-02 13:19:07,713 - INFO: 📊 Processing feeds and clustering articles...
+2025-01-02 13:19:07,714 - INFO: 📊 Total Feeds: 1
+2025-01-02 13:19:07,714 - INFO: 📦 Batch Size: 25
+2025-01-02 13:19:07,714 - INFO: ⏱️  Batch Delay: 15 seconds
+2025-01-02 13:19:07,714 - INFO: 🔄 Total Batches: 1
+2025-01-02 13:19:07,714 - INFO: 
+🔄 Processing Batch 1/1: Feeds 1 to 1
+2025-01-02 13:19:07,846 - INFO: 📰 Found 25 articles in feed: https://rss.app/feeds/tia0gUGHHTgNGSA6.xml
+2025-01-02 13:19:07,846 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:19:07,846 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:19:07,846 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:19:07,846 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:19:07,846 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:19:07,846 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:19:07,846 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:19:07,846 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:19:07,846 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:19:07,846 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:19:07,846 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:19:07,846 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:19:07,846 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:19:07,846 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:19:07,846 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:19:07,846 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:19:07,846 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:19:07,846 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:19:07,846 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:19:07,847 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:19:07,847 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:19:07,847 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:19:07,847 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:19:07,847 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:19:07,847 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:19:07,847 - INFO: ⏱️  Batch 1 Processing Time: 0.13 seconds
+2025-01-02 13:19:07,847 - INFO: 
+🎉 Processing Complete!
+2025-01-02 13:19:07,847 - INFO: 📊 Total Articles Processed: 25
+2025-01-02 13:19:07,991 - INFO: ❌ Failed Articles: 0
+2025-01-02 13:19:07,991 - INFO: ⏱️  Total Processing Time: 0.13 seconds
+2025-01-02 13:19:07,991 - INFO: 📈 Average Processing Time per Article: 0.01 seconds
+2025-01-02 13:19:07,991 - INFO: Performance: process_feeds took 0.2774 seconds (CPU: 17.3%, Memory: 1966080 bytes)
+2025-01-02 13:19:07,991 - INFO: Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+2025-01-02 13:19:07,991 - INFO: Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+2025-01-02 13:19:08,510 - INFO: Use pytorch device_name: mps
+2025-01-02 13:19:09,095 - INFO: Performance: cluster_similar_articles took 1.1039 seconds (CPU: 259.5%, Memory: 195805184 bytes)
+2025-01-02 13:19:09,096 - ERROR: Error generating HTML for article: name 'font' is not defined
+2025-01-02 13:19:09,096 - INFO: ✅ Output written to /Users/tim/workspace/GitHub/RSS-Summarizer/output/rss_summary_20250102_131909.html
+2025-01-02 13:19:09,096 - INFO: Performance: process_feeds_with_clustering took 1.3826 seconds (CPU: 210.7%, Memory: 197771264 bytes)
+2025-01-02 13:19:09,096 - WARNING: ⚠️ No articles found or processed
+2025-01-02 13:20:13,709 - INFO: Successfully loaded Readwise token from .env
+2025-01-02 13:20:13,868 - INFO: Successfully authenticated with Readwise API (token is valid)
+2025-01-02 13:20:13,869 - INFO: 🚀 Initializing RSS Reader...
+2025-01-02 13:20:14,418 - INFO: 📊 Processing feeds and clustering articles...
+2025-01-02 13:20:14,419 - INFO: 📊 Total Feeds: 1
+2025-01-02 13:20:14,419 - INFO: 📦 Batch Size: 25
+2025-01-02 13:20:14,419 - INFO: ⏱️  Batch Delay: 15 seconds
+2025-01-02 13:20:14,419 - INFO: 🔄 Total Batches: 1
+2025-01-02 13:20:14,419 - INFO: 
+🔄 Processing Batch 1/1: Feeds 1 to 1
+2025-01-02 13:20:14,559 - INFO: 📰 Found 25 articles in feed: https://rss.app/feeds/tia0gUGHHTgNGSA6.xml
+2025-01-02 13:20:14,559 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:20:14,559 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:20:14,559 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:20:14,559 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:20:14,559 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:20:14,559 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:20:14,559 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:20:14,559 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:20:14,559 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:20:14,560 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:20:14,560 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:20:14,560 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:20:14,560 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:20:14,560 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:20:14,560 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:20:14,560 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:20:14,560 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:20:14,560 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:20:14,560 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:20:14,560 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:20:14,560 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:20:14,560 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:20:14,560 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:20:14,560 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:20:14,560 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:20:14,560 - INFO: ⏱️  Batch 1 Processing Time: 0.14 seconds
+2025-01-02 13:20:14,560 - INFO: 
+🎉 Processing Complete!
+2025-01-02 13:20:14,560 - INFO: 📊 Total Articles Processed: 25
+2025-01-02 13:20:14,701 - INFO: ❌ Failed Articles: 0
+2025-01-02 13:20:14,701 - INFO: ⏱️  Total Processing Time: 0.14 seconds
+2025-01-02 13:20:14,701 - INFO: 📈 Average Processing Time per Article: 0.01 seconds
+2025-01-02 13:20:14,701 - INFO: Performance: process_feeds took 0.2821 seconds (CPU: 16.4%, Memory: 2113536 bytes)
+2025-01-02 13:20:14,701 - INFO: Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+2025-01-02 13:20:14,701 - INFO: Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+2025-01-02 13:20:15,214 - INFO: Use pytorch device_name: mps
+2025-01-02 13:20:15,664 - INFO: Performance: cluster_similar_articles took 0.9625 seconds (CPU: 283.7%, Memory: 177537024 bytes)
+2025-01-02 13:20:15,665 - ERROR: Error generating HTML for article: name 'font' is not defined
+2025-01-02 13:20:15,665 - INFO: ✅ Output written to /Users/tim/workspace/GitHub/RSS-Summarizer/output/rss_summary_20250102_132015.html
+2025-01-02 13:20:15,665 - INFO: Performance: process_feeds_with_clustering took 1.2461 seconds (CPU: 223.0%, Memory: 179650560 bytes)
+2025-01-02 13:20:15,665 - WARNING: ⚠️ No articles found or processed
+2025-01-02 13:28:50,897 - INFO: Successfully loaded Readwise token from .env
+2025-01-02 13:28:51,121 - INFO: Successfully authenticated with Readwise API (token is valid)
+2025-01-02 13:28:51,122 - INFO: 🚀 Initializing RSS Reader...
+2025-01-02 13:28:51,841 - INFO: 📊 Processing feeds and clustering articles...
+2025-01-02 13:28:51,841 - INFO: 📊 Total Feeds: 1
+2025-01-02 13:28:51,841 - INFO: 📦 Batch Size: 25
+2025-01-02 13:28:51,841 - INFO: ⏱️  Batch Delay: 15 seconds
+2025-01-02 13:28:51,841 - INFO: 🔄 Total Batches: 1
+2025-01-02 13:28:51,841 - INFO: 
+🔄 Processing Batch 1/1: Feeds 1 to 1
+2025-01-02 13:28:52,087 - INFO: 📰 Found 25 articles in feed: https://rss.app/feeds/tia0gUGHHTgNGSA6.xml
+2025-01-02 13:28:52,087 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:28:52,087 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:28:52,087 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:28:52,087 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:28:52,087 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:28:52,087 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:28:52,087 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:28:52,087 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:28:52,087 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:28:52,087 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:28:52,087 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:28:52,087 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:28:52,087 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:28:52,087 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:28:52,087 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:28:52,087 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:28:52,087 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:28:52,087 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:28:52,087 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:28:52,087 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:28:52,088 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:28:52,088 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:28:52,088 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:28:52,088 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:28:52,088 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:28:52,088 - INFO: ⏱️  Batch 1 Processing Time: 0.25 seconds
+2025-01-02 13:28:52,088 - INFO: 
+🎉 Processing Complete!
+2025-01-02 13:28:52,088 - INFO: 📊 Total Articles Processed: 25
+2025-01-02 13:28:52,237 - INFO: ❌ Failed Articles: 0
+2025-01-02 13:28:52,237 - INFO: ⏱️  Total Processing Time: 0.25 seconds
+2025-01-02 13:28:52,237 - INFO: 📈 Average Processing Time per Article: 0.01 seconds
+2025-01-02 13:28:52,237 - INFO: Performance: process_feeds took 0.3959 seconds (CPU: 11.9%, Memory: 2080768 bytes)
+2025-01-02 13:28:52,237 - INFO: Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+2025-01-02 13:28:52,237 - INFO: Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+2025-01-02 13:28:52,816 - INFO: Use pytorch device_name: mps
+2025-01-02 13:28:53,588 - INFO: Performance: cluster_similar_articles took 1.3511 seconds (CPU: 214.2%, Memory: 181829632 bytes)
+2025-01-02 13:28:53,589 - ERROR: Error generating HTML for article: name 'font' is not defined
+2025-01-02 13:28:53,589 - INFO: ✅ Output written to /Users/tim/workspace/GitHub/RSS-Summarizer/output/rss_summary_20250102_132853.html
+2025-01-02 13:28:53,589 - INFO: Performance: process_feeds_with_clustering took 1.7484 seconds (CPU: 168.3%, Memory: 183910400 bytes)
+2025-01-02 13:28:53,589 - WARNING: ⚠️ No articles found or processed
+2025-01-02 13:32:32,440 - INFO: Successfully loaded Readwise token from .env
+2025-01-02 13:32:32,571 - INFO: Successfully authenticated with Readwise API (token is valid)
+2025-01-02 13:32:32,572 - INFO: 🚀 Initializing RSS Reader...
+2025-01-02 13:32:33,181 - INFO: 📊 Processing feeds and clustering articles...
+2025-01-02 13:32:33,181 - ERROR: ❌ Error in main: 'RSSReader' object has no attribute 'process_feeds_with_clustering'
+2025-01-02 13:33:13,950 - INFO: Successfully loaded Readwise token from .env
+2025-01-02 13:33:14,085 - INFO: Successfully authenticated with Readwise API (token is valid)
+2025-01-02 13:33:14,085 - INFO: 🚀 Initializing RSS Reader...
+2025-01-02 13:33:14,614 - INFO: 📊 Processing feeds and clustering articles...
+2025-01-02 13:33:14,615 - INFO: 📊 Total Feeds: 1
+2025-01-02 13:33:14,615 - INFO: 📦 Batch Size: 25
+2025-01-02 13:33:14,615 - INFO: ⏱️  Batch Delay: 15 seconds
+2025-01-02 13:33:14,615 - INFO: 🔄 Total Batches: 1
+2025-01-02 13:33:14,615 - INFO: 
+🔄 Processing Batch 1/1: Feeds 1 to 1
+2025-01-02 13:33:14,922 - INFO: 📰 Found 25 articles in feed: https://rss.app/feeds/tia0gUGHHTgNGSA6.xml
+2025-01-02 13:33:14,922 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:33:14,922 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:33:14,922 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:33:14,922 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:33:14,922 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:33:14,922 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:33:14,922 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:33:14,922 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:33:14,923 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:33:14,923 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:33:14,923 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:33:14,923 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:33:14,923 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:33:14,923 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:33:14,923 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:33:14,923 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:33:14,923 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:33:14,923 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:33:14,923 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:33:14,923 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:33:14,923 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:33:14,923 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:33:14,923 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:33:14,923 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:33:14,923 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:33:14,923 - INFO: ⏱️  Batch 1 Processing Time: 0.31 seconds
+2025-01-02 13:33:14,923 - INFO: 
+🎉 Processing Complete!
+2025-01-02 13:33:14,923 - INFO: 📊 Total Articles Processed: 25
+2025-01-02 13:33:15,078 - INFO: ❌ Failed Articles: 0
+2025-01-02 13:33:15,078 - INFO: ⏱️  Total Processing Time: 0.31 seconds
+2025-01-02 13:33:15,078 - INFO: 📈 Average Processing Time per Article: 0.01 seconds
+2025-01-02 13:33:15,078 - INFO: Performance: process_feeds took 0.4642 seconds (CPU: 10.3%, Memory: 1671168 bytes)
+2025-01-02 13:33:15,079 - INFO: Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+2025-01-02 13:33:15,079 - INFO: Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+2025-01-02 13:33:15,943 - INFO: Use pytorch device_name: mps
+2025-01-02 13:33:16,595 - INFO: Performance: cluster_similar_articles took 1.5165 seconds (CPU: 161.3%, Memory: 193282048 bytes)
+2025-01-02 13:33:16,595 - INFO: Performance: process_feeds_with_clustering took 1.9818 seconds (CPU: 125.9%, Memory: 194953216 bytes)
+2025-01-02 13:33:16,596 - INFO: 📝 Generating HTML output...
+2025-01-02 13:33:16,596 - ERROR: Error processing cluster: 'RSSReader' object has no attribute '_process_cluster'
+2025-01-02 13:33:16,596 - ERROR: Error processing cluster: 'RSSReader' object has no attribute '_process_cluster'
+2025-01-02 13:33:16,596 - ERROR: Error processing cluster: 'RSSReader' object has no attribute '_process_cluster'
+2025-01-02 13:33:16,596 - ERROR: Error processing cluster: 'RSSReader' object has no attribute '_process_cluster'
+2025-01-02 13:33:16,596 - ERROR: Error processing cluster: 'RSSReader' object has no attribute '_process_cluster'
+2025-01-02 13:33:16,596 - ERROR: Error processing cluster: 'RSSReader' object has no attribute '_process_cluster'
+2025-01-02 13:33:16,596 - ERROR: Error processing cluster: 'RSSReader' object has no attribute '_process_cluster'
+2025-01-02 13:33:16,596 - ERROR: Error processing cluster: 'RSSReader' object has no attribute '_process_cluster'
+2025-01-02 13:33:16,596 - ERROR: Error processing cluster: 'RSSReader' object has no attribute '_process_cluster'
+2025-01-02 13:33:16,596 - ERROR: Error processing cluster: 'RSSReader' object has no attribute '_process_cluster'
+2025-01-02 13:33:16,596 - ERROR: Error generating HTML output: 'RSSReader' object has no attribute '_generate_html_footer'
+2025-01-02 13:33:16,596 - INFO: Partial output saved to output/rss_summary_error_20250102_133316.html
+2025-01-02 13:33:16,596 - INFO: Performance: generate_html_output took 0.0005 seconds (CPU: 100.2%, Memory: 0 bytes)
+2025-01-02 13:33:52,600 - INFO: Successfully loaded Readwise token from .env
+2025-01-02 13:33:52,753 - INFO: Successfully authenticated with Readwise API (token is valid)
+2025-01-02 13:33:52,754 - INFO: 🚀 Initializing RSS Reader...
+2025-01-02 13:33:53,310 - INFO: 📊 Processing feeds and clustering articles...
+2025-01-02 13:33:53,310 - INFO: 📊 Total Feeds: 1
+2025-01-02 13:33:53,310 - INFO: 📦 Batch Size: 25
+2025-01-02 13:33:53,310 - INFO: ⏱️  Batch Delay: 15 seconds
+2025-01-02 13:33:53,310 - INFO: 🔄 Total Batches: 1
+2025-01-02 13:33:53,310 - INFO: 
+🔄 Processing Batch 1/1: Feeds 1 to 1
+2025-01-02 13:33:53,454 - INFO: 📰 Found 25 articles in feed: https://rss.app/feeds/tia0gUGHHTgNGSA6.xml
+2025-01-02 13:33:53,454 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:33:53,454 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:33:53,454 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:33:53,454 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:33:53,454 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:33:53,454 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:33:53,454 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:33:53,454 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:33:53,454 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:33:53,454 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:33:53,455 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:33:53,455 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:33:53,455 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:33:53,455 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:33:53,455 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:33:53,455 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:33:53,455 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:33:53,455 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:33:53,455 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:33:53,455 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:33:53,455 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:33:53,455 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:33:53,455 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:33:53,455 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:33:53,455 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:33:53,455 - INFO: ⏱️  Batch 1 Processing Time: 0.14 seconds
+2025-01-02 13:33:53,455 - INFO: 
+🎉 Processing Complete!
+2025-01-02 13:33:53,455 - INFO: 📊 Total Articles Processed: 25
+2025-01-02 13:33:53,628 - INFO: ❌ Failed Articles: 0
+2025-01-02 13:33:53,628 - INFO: ⏱️  Total Processing Time: 0.14 seconds
+2025-01-02 13:33:53,628 - INFO: 📈 Average Processing Time per Article: 0.01 seconds
+2025-01-02 13:33:53,628 - INFO: Performance: process_feeds took 0.3178 seconds (CPU: 15.1%, Memory: 2031616 bytes)
+2025-01-02 13:33:53,628 - INFO: Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+2025-01-02 13:33:53,628 - INFO: Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+2025-01-02 13:33:54,070 - INFO: Use pytorch device_name: mps
+2025-01-02 13:33:54,706 - INFO: Performance: cluster_similar_articles took 1.0772 seconds (CPU: 252.2%, Memory: 193085440 bytes)
+2025-01-02 13:33:54,706 - INFO: Performance: process_feeds_with_clustering took 1.3962 seconds (CPU: 198.1%, Memory: 195117056 bytes)
+2025-01-02 13:33:54,706 - INFO: 📝 Generating HTML output...
+2025-01-02 13:33:54,707 - ERROR: Error processing cluster: 'RSSReader' object has no attribute '_process_multiple_articles'
+2025-01-02 13:33:54,707 - ERROR: Error processing cluster: 'RSSReader' object has no attribute '_process_multiple_articles'
+2025-01-02 13:33:54,707 - ERROR: Error processing cluster: 'RSSReader' object has no attribute '_process_multiple_articles'
+2025-01-02 13:33:54,707 - ERROR: Error processing cluster: 'RSSReader' object has no attribute '_process_multiple_articles'
+2025-01-02 13:33:54,707 - ERROR: Error processing cluster: 'RSSReader' object has no attribute '_process_multiple_articles'
+2025-01-02 13:33:54,707 - ERROR: Error processing cluster: 'RSSReader' object has no attribute '_process_single_article'
+2025-01-02 13:33:54,707 - ERROR: Error processing cluster: 'RSSReader' object has no attribute '_process_single_article'
+2025-01-02 13:33:54,707 - ERROR: Error processing cluster: 'RSSReader' object has no attribute '_process_single_article'
+2025-01-02 13:33:54,707 - ERROR: Error processing cluster: 'RSSReader' object has no attribute '_process_single_article'
+2025-01-02 13:33:54,707 - ERROR: Error processing cluster: 'RSSReader' object has no attribute '_process_single_article'
+2025-01-02 13:33:54,707 - INFO: ✅ Output written to output/rss_summary_20250102_133354.html
+2025-01-02 13:33:54,707 - INFO: Performance: generate_html_output took 0.0005 seconds (CPU: 100.1%, Memory: 0 bytes)
+2025-01-02 13:33:54,707 - INFO: ✨ Opening output/rss_summary_20250102_133354.html in browser...
+2025-01-02 13:34:42,518 - INFO: Successfully loaded Readwise token from .env
+2025-01-02 13:34:42,637 - INFO: Successfully authenticated with Readwise API (token is valid)
+2025-01-02 13:34:42,638 - INFO: 🚀 Initializing RSS Reader...
+2025-01-02 13:34:43,184 - INFO: 📊 Processing feeds and clustering articles...
+2025-01-02 13:34:43,184 - INFO: 📊 Total Feeds: 1
+2025-01-02 13:34:43,184 - INFO: 📦 Batch Size: 25
+2025-01-02 13:34:43,184 - INFO: ⏱️  Batch Delay: 15 seconds
+2025-01-02 13:34:43,184 - INFO: 🔄 Total Batches: 1
+2025-01-02 13:34:43,184 - INFO: 
+🔄 Processing Batch 1/1: Feeds 1 to 1
+2025-01-02 13:34:43,324 - INFO: 📰 Found 25 articles in feed: https://rss.app/feeds/tia0gUGHHTgNGSA6.xml
+2025-01-02 13:34:43,324 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:34:43,324 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:34:43,324 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:34:43,324 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:34:43,324 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:34:43,324 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:34:43,324 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:34:43,324 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:34:43,324 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:34:43,324 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:34:43,324 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:34:43,325 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:34:43,325 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:34:43,325 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:34:43,325 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:34:43,325 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:34:43,325 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:34:43,325 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:34:43,325 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:34:43,325 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:34:43,325 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:34:43,325 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:34:43,325 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:34:43,325 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:34:43,325 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:34:43,325 - INFO: ⏱️  Batch 1 Processing Time: 0.14 seconds
+2025-01-02 13:34:43,325 - INFO: 
+🎉 Processing Complete!
+2025-01-02 13:34:43,325 - INFO: 📊 Total Articles Processed: 25
+2025-01-02 13:34:43,490 - INFO: ❌ Failed Articles: 0
+2025-01-02 13:34:43,490 - INFO: ⏱️  Total Processing Time: 0.14 seconds
+2025-01-02 13:34:43,490 - INFO: 📈 Average Processing Time per Article: 0.01 seconds
+2025-01-02 13:34:43,490 - INFO: Performance: process_feeds took 0.3061 seconds (CPU: 15.4%, Memory: 1753088 bytes)
+2025-01-02 13:34:43,491 - INFO: Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+2025-01-02 13:34:43,491 - INFO: Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+2025-01-02 13:34:44,013 - INFO: Use pytorch device_name: mps
+2025-01-02 13:34:44,626 - INFO: Performance: cluster_similar_articles took 1.1352 seconds (CPU: 228.6%, Memory: 190578688 bytes)
+2025-01-02 13:34:44,626 - INFO: Performance: process_feeds_with_clustering took 1.4425 seconds (CPU: 183.3%, Memory: 192331776 bytes)
+2025-01-02 13:34:44,627 - INFO: 📝 Generating HTML output...
+2025-01-02 13:34:44,627 - ERROR: Error processing cluster: 'RSSReader' object has no attribute 'generate_cluster_summary'
+2025-01-02 13:34:44,627 - ERROR: Error processing cluster: 'RSSReader' object has no attribute 'generate_cluster_summary'
+2025-01-02 13:34:44,627 - ERROR: Error processing cluster: 'RSSReader' object has no attribute 'generate_cluster_summary'
+2025-01-02 13:34:44,627 - ERROR: Error processing cluster: 'RSSReader' object has no attribute 'generate_cluster_summary'
+2025-01-02 13:34:44,627 - ERROR: Error processing cluster: 'RSSReader' object has no attribute 'generate_cluster_summary'
+2025-01-02 13:34:44,627 - ERROR: Error processing cluster: 'NoneType' object has no attribute 'get'
+2025-01-02 13:34:44,627 - ERROR: Error processing cluster: 'NoneType' object has no attribute 'get'
+2025-01-02 13:34:44,627 - ERROR: Error processing cluster: 'NoneType' object has no attribute 'get'
+2025-01-02 13:34:44,627 - ERROR: Error processing cluster: 'NoneType' object has no attribute 'get'
+2025-01-02 13:34:44,627 - ERROR: Error processing cluster: 'NoneType' object has no attribute 'get'
+2025-01-02 13:34:44,627 - INFO: ✅ Output written to output/rss_summary_20250102_133444.html
+2025-01-02 13:34:44,627 - INFO: Performance: generate_html_output took 0.0007 seconds (CPU: 99.1%, Memory: 0 bytes)
+2025-01-02 13:34:44,628 - INFO: ✨ Opening output/rss_summary_20250102_133444.html in browser...
+2025-01-02 13:35:41,354 - INFO: Successfully loaded Readwise token from .env
+2025-01-02 13:35:41,533 - INFO: Successfully authenticated with Readwise API (token is valid)
+2025-01-02 13:35:41,534 - INFO: 🚀 Initializing RSS Reader...
+2025-01-02 13:35:42,069 - INFO: 📊 Processing feeds and clustering articles...
+2025-01-02 13:35:42,070 - INFO: 📊 Total Feeds: 1
+2025-01-02 13:35:42,070 - INFO: 📦 Batch Size: 25
+2025-01-02 13:35:42,070 - INFO: ⏱️  Batch Delay: 15 seconds
+2025-01-02 13:35:42,070 - INFO: 🔄 Total Batches: 1
+2025-01-02 13:35:42,070 - INFO: 
+🔄 Processing Batch 1/1: Feeds 1 to 1
+2025-01-02 13:35:42,214 - INFO: 📰 Found 25 articles in feed: https://rss.app/feeds/tia0gUGHHTgNGSA6.xml
+2025-01-02 13:35:42,214 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:35:42,214 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:35:42,214 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:35:42,214 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:35:42,214 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:35:42,214 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:35:42,214 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:35:42,214 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:35:42,214 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:35:42,214 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:35:42,214 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:35:42,214 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:35:42,214 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:35:42,214 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:35:42,215 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:35:42,215 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:35:42,215 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:35:42,215 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:35:42,215 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:35:42,215 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:35:42,215 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:35:42,215 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:35:42,215 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:35:42,215 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:35:42,215 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:35:42,215 - INFO: ⏱️  Batch 1 Processing Time: 0.14 seconds
+2025-01-02 13:35:42,215 - INFO: 
+🎉 Processing Complete!
+2025-01-02 13:35:42,215 - INFO: 📊 Total Articles Processed: 25
+2025-01-02 13:35:42,347 - INFO: ❌ Failed Articles: 0
+2025-01-02 13:35:42,347 - INFO: ⏱️  Total Processing Time: 0.14 seconds
+2025-01-02 13:35:42,347 - INFO: 📈 Average Processing Time per Article: 0.01 seconds
+2025-01-02 13:35:42,347 - INFO: Performance: process_feeds took 0.2776 seconds (CPU: 16.9%, Memory: 2031616 bytes)
+2025-01-02 13:35:42,348 - INFO: Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+2025-01-02 13:35:42,348 - INFO: Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+2025-01-02 13:35:42,783 - INFO: Use pytorch device_name: mps
+2025-01-02 13:35:43,236 - INFO: Performance: cluster_similar_articles took 0.8888 seconds (CPU: 268.8%, Memory: 172457984 bytes)
+2025-01-02 13:35:43,237 - INFO: Performance: process_feeds_with_clustering took 1.1675 seconds (CPU: 208.7%, Memory: 174489600 bytes)
+2025-01-02 13:35:43,237 - INFO: 📝 Generating HTML output...
+2025-01-02 13:35:43,237 - ERROR: Error processing cluster: 'RSSReader' object has no attribute 'generate_cluster_summary'
+2025-01-02 13:35:43,237 - ERROR: Error processing cluster: 'RSSReader' object has no attribute 'generate_cluster_summary'
+2025-01-02 13:35:43,237 - ERROR: Error processing cluster: 'RSSReader' object has no attribute 'generate_cluster_summary'
+2025-01-02 13:35:43,237 - ERROR: Error processing cluster: 'RSSReader' object has no attribute 'generate_cluster_summary'
+2025-01-02 13:35:43,237 - ERROR: Error processing cluster: 'RSSReader' object has no attribute 'generate_cluster_summary'
+2025-01-02 13:35:43,237 - ERROR: Error processing cluster: 'NoneType' object has no attribute 'get'
+2025-01-02 13:35:43,238 - ERROR: Error processing cluster: 'NoneType' object has no attribute 'get'
+2025-01-02 13:35:43,238 - ERROR: Error processing cluster: 'NoneType' object has no attribute 'get'
+2025-01-02 13:35:43,238 - ERROR: Error processing cluster: 'NoneType' object has no attribute 'get'
+2025-01-02 13:35:43,238 - ERROR: Error processing cluster: 'NoneType' object has no attribute 'get'
+2025-01-02 13:35:43,238 - INFO: ✅ Output written to output/rss_summary_20250102_133543.html
+2025-01-02 13:35:43,238 - INFO: Performance: generate_html_output took 0.0005 seconds (CPU: 100.2%, Memory: 0 bytes)
+2025-01-02 13:35:43,238 - INFO: ✨ Opening output/rss_summary_20250102_133543.html in browser...
+2025-01-02 13:37:58,548 - INFO: Successfully loaded Readwise token from .env
+2025-01-02 13:37:58,700 - INFO: Successfully authenticated with Readwise API (token is valid)
+2025-01-02 13:37:58,701 - INFO: 🚀 Initializing RSS Reader...
+2025-01-02 13:37:59,239 - INFO: 📊 Processing feeds and clustering articles...
+2025-01-02 13:37:59,239 - INFO: 📊 Total Feeds: 1
+2025-01-02 13:37:59,239 - INFO: 📦 Batch Size: 25
+2025-01-02 13:37:59,240 - INFO: ⏱️  Batch Delay: 15 seconds
+2025-01-02 13:37:59,240 - INFO: 🔄 Total Batches: 1
+2025-01-02 13:37:59,240 - INFO: 
+🔄 Processing Batch 1/1: Feeds 1 to 1
+2025-01-02 13:37:59,405 - INFO: 📰 Found 25 articles in feed: https://rss.app/feeds/tia0gUGHHTgNGSA6.xml
+2025-01-02 13:37:59,405 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:37:59,405 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:37:59,405 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:37:59,405 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:37:59,405 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:37:59,405 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:37:59,405 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:37:59,405 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:37:59,405 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:37:59,405 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:37:59,405 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:37:59,405 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:37:59,405 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:37:59,405 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:37:59,405 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:37:59,405 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:37:59,406 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:37:59,406 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:37:59,406 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:37:59,406 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:37:59,406 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:37:59,406 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:37:59,406 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:37:59,406 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:37:59,406 - ERROR: Failed to generate summary: 'str' object cannot be interpreted as an integer
+2025-01-02 13:37:59,406 - INFO: ⏱️  Batch 1 Processing Time: 0.17 seconds
+2025-01-02 13:37:59,406 - INFO: 
+🎉 Processing Complete!
+2025-01-02 13:37:59,406 - INFO: 📊 Total Articles Processed: 25
+2025-01-02 13:37:59,557 - INFO: ❌ Failed Articles: 0
+2025-01-02 13:37:59,557 - INFO: ⏱️  Total Processing Time: 0.17 seconds
+2025-01-02 13:37:59,557 - INFO: 📈 Average Processing Time per Article: 0.01 seconds
+2025-01-02 13:37:59,557 - INFO: Performance: process_feeds took 0.3178 seconds (CPU: 14.8%, Memory: 1458176 bytes)
+2025-01-02 13:37:59,558 - INFO: Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+2025-01-02 13:37:59,558 - INFO: Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+2025-01-02 13:38:00,063 - INFO: Use pytorch device_name: mps
+2025-01-02 13:38:00,756 - INFO: Performance: cluster_similar_articles took 1.1985 seconds (CPU: 220.6%, Memory: 187908096 bytes)
+2025-01-02 13:38:00,757 - INFO: Performance: process_feeds_with_clustering took 1.5176 seconds (CPU: 177.4%, Memory: 189366272 bytes)
+2025-01-02 13:38:00,757 - INFO: 📝 Generating HTML output...
+2025-01-02 13:38:00,758 - ERROR: Error processing cluster: 'NoneType' object has no attribute 'get'
+2025-01-02 13:38:00,758 - ERROR: Error processing cluster: 'NoneType' object has no attribute 'get'
+2025-01-02 13:38:00,758 - ERROR: Error processing cluster: 'NoneType' object has no attribute 'get'
+2025-01-02 13:38:00,758 - ERROR: Error processing cluster: 'NoneType' object has no attribute 'get'
+2025-01-02 13:38:00,758 - ERROR: Error processing cluster: 'NoneType' object has no attribute 'get'
+2025-01-02 13:38:00,758 - INFO: ✅ Output written to output/rss_summary_20250102_133800.html
+2025-01-02 13:38:00,758 - INFO: Performance: generate_html_output took 0.0006 seconds (CPU: 97.6%, Memory: 0 bytes)
+2025-01-02 13:38:00,758 - INFO: ✨ Opening output/rss_summary_20250102_133800.html in browser...
+2025-01-02 13:40:19,430 - INFO: Successfully loaded Readwise token from .env
+2025-01-02 13:40:19,574 - INFO: Successfully authenticated with Readwise API (token is valid)
+2025-01-02 13:40:19,575 - INFO: 🚀 Initializing RSS Reader...
+2025-01-02 13:40:20,146 - INFO: 📊 Processing feeds and clustering articles...
+2025-01-02 13:40:20,147 - INFO: 📊 Total Feeds: 1
+2025-01-02 13:40:20,147 - INFO: 📦 Batch Size: 25
+2025-01-02 13:40:20,147 - INFO: ⏱️  Batch Delay: 15 seconds
+2025-01-02 13:40:20,147 - INFO: 🔄 Total Batches: 1
+2025-01-02 13:40:20,147 - INFO: 
+🔄 Processing Batch 1/1: Feeds 1 to 1
+2025-01-02 13:40:20,305 - INFO: 📰 Found 25 articles in feed: https://rss.app/feeds/tia0gUGHHTgNGSA6.xml
+2025-01-02 13:40:21,269 - INFO: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2025-01-02 13:40:21,273 - INFO: Generated summary for article: Microsoft’s mini AI PCs are on the way
+2025-01-02 13:40:22,812 - INFO: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2025-01-02 13:40:22,814 - INFO: Generated summary for article: Cybersecurity leaders scramble to keep up with genAI's new threats
+2025-01-02 13:40:24,199 - INFO: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2025-01-02 13:40:24,201 - INFO: Generated summary for article: What Analysts Think of Nvidia Stock Ahead of CEO Jensen Huang's CES Keynote
+2025-01-02 13:40:25,752 - INFO: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2025-01-02 13:40:25,754 - INFO: Generated summary for article: 5 Big Advances Last Year In Artificial Intelligence
+2025-01-02 13:40:27,311 - INFO: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2025-01-02 13:40:27,312 - INFO: Generated summary for article: Samsung just unveiled a sleek new OLED smart monitor (and it's not just for gamers)
+2025-01-02 13:40:28,865 - INFO: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2025-01-02 13:40:28,867 - INFO: Generated summary for article: Wall Street Analysts Think SoundHound AI (SOUN) Is a Good Investment: Is It?
+2025-01-02 13:40:30,448 - INFO: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2025-01-02 13:40:30,450 - INFO: Generated summary for article: Nvidia Eyes Bullish Breakout with $190 Price Target Ahead of CES 2025
+2025-01-02 13:40:32,054 - INFO: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2025-01-02 13:40:32,056 - INFO: Generated summary for article: The next 5 years look good for Nvidia: Investor
+2025-01-02 13:40:33,637 - INFO: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2025-01-02 13:40:33,638 - INFO: Generated summary for article: Apheris rethinks the AI data bottleneck in life science with federated computing
+2025-01-02 13:40:35,020 - INFO: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2025-01-02 13:40:35,021 - INFO: Generated summary for article: 2025 will be the year climate tech learns to love AI
+2025-01-02 13:40:35,935 - INFO: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2025-01-02 13:40:35,936 - INFO: Generated summary for article: AI Fuels Reported Rise in ‘Polished’ Phishing Scams
+2025-01-02 13:40:37,554 - INFO: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2025-01-02 13:40:37,556 - INFO: Generated summary for article: Asus, Samsung, and MSI announce world’s first 27-inch 4K OLED 240Hz monitors
+2025-01-02 13:40:39,196 - INFO: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2025-01-02 13:40:39,200 - INFO: Generated summary for article: 6 Ways AI Changed Business in 2024, According to Executives
+2025-01-02 13:40:39,999 - INFO: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2025-01-02 13:40:40,001 - INFO: Generated summary for article: Why Nvidia's AI Chip Lead Is Sustainable
+2025-01-02 13:40:41,417 - INFO: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2025-01-02 13:40:41,419 - INFO: Generated summary for article: Why Nvidia's AI Chip Lead Is Sustainable
+2025-01-02 13:40:42,905 - INFO: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2025-01-02 13:40:42,907 - INFO: Generated summary for article: Nvidia rises as BofA keeps Top Pick rating on chip giant ahead of CES
+2025-01-02 13:40:44,460 - INFO: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2025-01-02 13:40:44,466 - INFO: Generated summary for article: Northern Data (NB2) Is Well Positioned to Take Advantage of the AI Boom: Canaccord
+2025-01-02 13:40:46,314 - INFO: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2025-01-02 13:40:46,319 - INFO: Generated summary for article: Alibaba Leverages Scale and Deep Pockets to Slash AI LLM Prices To Gain Market Share
+2025-01-02 13:40:47,919 - INFO: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2025-01-02 13:40:47,921 - INFO: Generated summary for article: China and Russia forge major tech collaboration to challenge US
+2025-01-02 13:40:49,552 - INFO: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2025-01-02 13:40:49,555 - INFO: Generated summary for article: AI-powered mining firm backed by Gates and Bezos is now worth $2.96 billion as it takes on Chinese rivals
+2025-01-02 13:40:51,141 - INFO: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2025-01-02 13:40:51,147 - INFO: Generated summary for article: MPG 272QR QD-OLED X50 is first 27-inch 500Hz monitor with DP2.1a and VESA ClearMR 21000 specs
+2025-01-02 13:40:52,569 - INFO: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2025-01-02 13:40:52,573 - INFO: Generated summary for article: Crypto whale up $11.5M on AI token position in 19 days
+2025-01-02 13:40:53,334 - INFO: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2025-01-02 13:40:53,336 - INFO: Generated summary for article: AI chatbots fail to diagnose patients by talking with them
+2025-01-02 13:40:54,723 - INFO: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2025-01-02 13:40:54,726 - INFO: Generated summary for article: New test evaluates AI doctors' real-world communication skills
+2025-01-02 13:40:56,306 - INFO: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2025-01-02 13:40:56,309 - INFO: Generated summary for article: US Health Department proposes new HIPAA cybersecurity rules
+2025-01-02 13:40:56,309 - INFO: ⏱️  Batch 1 Processing Time: 36.16 seconds
+2025-01-02 13:40:56,309 - INFO: 
+🎉 Processing Complete!
+2025-01-02 13:40:56,309 - INFO: 📊 Total Articles Processed: 25
+2025-01-02 13:40:56,532 - INFO: ❌ Failed Articles: 0
+2025-01-02 13:40:56,532 - INFO: ⏱️  Total Processing Time: 36.16 seconds
+2025-01-02 13:40:56,532 - INFO: 📈 Average Processing Time per Article: 1.45 seconds
+2025-01-02 13:40:56,532 - INFO: Performance: process_feeds took 36.3857 seconds (CPU: 0.7%, Memory: 1884160 bytes)
+2025-01-02 13:40:56,534 - INFO: Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+2025-01-02 13:40:56,534 - INFO: Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+2025-01-02 13:40:57,093 - INFO: Use pytorch device_name: mps
+2025-01-02 13:40:57,855 - INFO: Performance: cluster_similar_articles took 1.3215 seconds (CPU: 200.5%, Memory: 192200704 bytes)
+2025-01-02 13:40:57,856 - INFO: Performance: process_feeds_with_clustering took 37.7094 seconds (CPU: 7.7%, Memory: 194084864 bytes)
+2025-01-02 13:40:57,856 - INFO: 📝 Generating HTML output...
+2025-01-02 13:40:59,781 - INFO: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2025-01-02 13:41:01,623 - INFO: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2025-01-02 13:41:03,623 - INFO: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2025-01-02 13:41:05,623 - INFO: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2025-01-02 13:41:07,464 - INFO: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2025-01-02 13:41:07,470 - INFO: ✅ Output written to output/rss_summary_20250102_134057.html
+2025-01-02 13:41:07,472 - INFO: Performance: generate_html_output took 9.6143 seconds (CPU: 0.4%, Memory: 147456 bytes)
+2025-01-02 13:41:07,474 - INFO: ✨ Opening output/rss_summary_20250102_134057.html in browser...

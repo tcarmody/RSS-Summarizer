@@ -1,18 +1,5 @@
 """
 RSS Reader with AI-Powered Summarization and Article Clustering
-
-This script implements an advanced RSS feed reader that uses AI to generate summaries
-and clusters similar articles together. It combines several key features:
-
-1. AI Summarization: Uses Claude API for high-quality article summaries
-2. Article Clustering: Groups similar articles using semantic similarity
-3. Caching: Implements efficient caching to avoid redundant API calls
-4. HTML Output: Generates clean, modern HTML with clustered articles
-
-The script is structured into several main components:
-- SummaryCache: Handles caching of article summaries
-- RSSReader: Main class that orchestrates the entire process
-- Performance tracking decorators for monitoring and optimization
 """
 
 import os
@@ -24,7 +11,7 @@ import hashlib
 import requests
 import traceback
 import html
-from typing import Callable, Any
+from typing import Callable, Any, Dict, List, Optional, Union
 import datetime
 import pytz
 import functools
@@ -40,8 +27,50 @@ from datetime import datetime, timedelta
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
-import anthropic
+from anthropic import Anthropic
 from tqdm import tqdm
+from dotenv import load_dotenv
+from urllib.parse import urlparse
+
+# Load environment variables from .env file
+env_path = os.path.expanduser('~/workspace/.env')
+load_dotenv(env_path)
+
+if not os.path.exists(env_path):
+    logging.warning(f"No .env file found at {env_path}")
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s: %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler('rss_reader.log')
+    ]
+)
+
+logger = logging.getLogger(__name__)
+
+def get_env_var(var_name, required=True):
+    """Get environment variable with error handling.
+    
+    Args:
+        var_name (str): Name of environment variable
+        required (bool): Whether the variable is required
+        
+    Returns:
+        str: Value of environment variable
+        
+    Raises:
+        ValueError: If required variable is not set
+    """
+    value = os.getenv(var_name)
+    if required and not value:
+        raise ValueError(
+            f"Environment variable {var_name} is not set. "
+            f"Please set it in your .env file."
+        )
+    return value
 
 def track_performance(log_level=logging.INFO, log_to_file=True):
     """
@@ -148,48 +177,6 @@ def track_performance(log_level=logging.INFO, log_to_file=True):
             return result
         return wrapper
     return decorator
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s: %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
-logger = logging.getLogger(__name__)
-
-import concurrent.futures
-import datetime
-from datetime import datetime, timedelta
-import dotenv
-import feedparser
-import hashlib
-import html2text
-import json
-import os
-import pytz
-import re
-import requests
-import sys
-import time
-import traceback
-from bs4 import BeautifulSoup
-from email.utils import parsedate_to_datetime
-from typing import List, Dict, Any, Optional, Callable
-from urllib.parse import urlparse
-
-import numpy as np
-from anthropic import Anthropic
-from transformers import pipeline, BartForConditionalGeneration, BartTokenizer, AutoTokenizer
-from webdriver_manager.chrome import ChromeDriverManager
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-
-# Load environment variables from .env file
-dotenv.load_dotenv()
 
 class FeedCache:
     """
@@ -532,51 +519,128 @@ class RateLimiter:
         return wrapper
 
 class ArticleFilter:
-    """
-    Provides advanced filtering for RSS feed articles.
+    """Advanced content filtering system for RSS feed articles.
     
-    Allows customizable filtering based on various criteria 
-    like word count, keywords, and content analysis.
+    Provides flexible filtering based on multiple criteria including:
+    - Sponsored/advertising content detection
+    - Cryptocurrency content filtering
+    - Custom keyword and pattern matching
     """
-    @staticmethod
-    def filter_articles(
-        articles: List[Dict[str, Any]], 
-        config: RSSReaderConfig
-    ) -> List[Dict[str, Any]]:
-        """
-        Filter articles based on predefined criteria.
+    
+    def __init__(self):
+        # Patterns that indicate sponsored/advertising content
+        self.sponsored_patterns = [
+            r'(?i)sponsored\s+(?:by|content|post)',
+            r'(?i)advertisement\s*(?:feature)?',
+            r'(?i)promoted\s+(?:by|content|post)',
+            r'(?i)paid\s+(?:content|post|partnership)',
+            r'(?i)partner\s+content',
+            r'(?i)\[sponsored\]',
+            r'(?i)in\s+association\s+with'
+        ]
         
-        :param articles: List of article dictionaries
-        :param config: Configuration settings
-        :return: Filtered list of articles
-        """
-        def is_valid_article(article: Dict[str, Any]) -> bool:
-            # Extract summary or content
-            content = article.get('summary', '') or article.get('description', '')
-            
-            # Word count filter
-            words = content.split()
-            word_count = len(words)
-            if not (config.min_article_words <= word_count <= config.max_article_words):
-                return False
-            
-            # Lowercase content for keyword matching
-            content_lower = content.lower()
-            
-            # Keyword inclusion filter
-            if config.keywords:
-                if not any(keyword.lower() in content_lower for keyword in config.keywords):
-                    return False
-            
-            # Exclude keywords filter
-            if config.exclude_keywords:
-                if any(keyword.lower() in content_lower for keyword in config.exclude_keywords):
-                    return False
-            
-            return True
+        # Patterns for crypto-related content
+        self.crypto_patterns = [
+            r'(?i)(?:bit|lite|doge)coin',
+            r'(?i)crypto(?:currency|currencies)',
+            r'(?i)blockchain',
+            r'(?i)(?:web3|nft)',
+            r'(?i)(?:defi|dao|dex)',
+            r'(?i)(?:mining rig|hash rate)',
+            r'(?i)(?:hodl|to the moon)',
+            r'(?i)(?:satoshi|nakamoto)'
+        ]
         
-        # Apply filtering
-        return [article for article in articles if is_valid_article(article)]
+        # Compile all patterns for better performance
+        self.sponsored_regex = re.compile('|'.join(self.sponsored_patterns))
+        self.crypto_regex = re.compile('|'.join(self.crypto_patterns))
+        
+        # Threshold for crypto content (percentage of content that can be crypto-related)
+        self.crypto_threshold = 0.15  # 15% threshold
+        
+    def is_sponsored_content(self, article):
+        """Check if article is sponsored content."""
+        # Check title, description, and content
+        text_to_check = ' '.join(filter(None, [
+            article.get('title', ''),
+            article.get('description', ''),
+            article.get('content', '')
+        ])).lower()
+        
+        # Check for sponsored patterns
+        return bool(self.sponsored_regex.search(text_to_check))
+    
+    def is_crypto_focused(self, article):
+        """Check if article is primarily about cryptocurrency."""
+        text_to_check = ' '.join(filter(None, [
+            article.get('title', ''),
+            article.get('description', ''),
+            article.get('content', '')
+        ])).lower()
+        
+        # Split into words for analysis
+        words = text_to_check.split()
+        if not words:
+            return False
+            
+        # Count crypto-related matches
+        crypto_matches = len(re.findall(self.crypto_regex, text_to_check))
+        
+        # Calculate the ratio of crypto-related terms to total words
+        crypto_ratio = crypto_matches / len(words)
+        
+        return crypto_ratio > self.crypto_threshold
+    
+    def filter_articles(self, articles, config=None):
+        """Filter articles based on predefined criteria.
+        
+        Args:
+            articles: List of article dictionaries
+            config: Optional configuration settings
+            
+        Returns:
+            List of filtered articles
+        """
+        filtered_articles = []
+        
+        for article in articles:
+            # Skip if article is missing essential fields
+            if not all(k in article for k in ['title', 'link']):
+                continue
+                
+            # Skip sponsored content
+            if self.is_sponsored_content(article):
+                logging.debug(f"Filtered sponsored content: {article['title']}")
+                continue
+                
+            # Skip crypto-focused content
+            if self.is_crypto_focused(article):
+                logging.debug(f"Filtered crypto content: {article['title']}")
+                continue
+                
+            # Apply additional config-based filters if provided
+            if config:
+                # Check minimum word count
+                if hasattr(config, 'min_article_words'):
+                    content = article.get('content', '')
+                    word_count = len(content.split())
+                    if word_count < config.min_article_words:
+                        continue
+                
+                # Check excluded keywords
+                if hasattr(config, 'exclude_keywords'):
+                    text = ' '.join([
+                        article.get('title', ''),
+                        article.get('description', ''),
+                        article.get('content', '')
+                    ]).lower()
+                    
+                    if any(keyword.lower() in text for keyword in config.exclude_keywords):
+                        continue
+            
+            filtered_articles.append(article)
+            
+        return filtered_articles
 
 class EnhancedLogging:
     """
@@ -608,6 +672,738 @@ class EnhancedLogging:
         logger = logging.getLogger('RSSReader')
         return logger
 
+class TagGenerator:
+    """Generates and suggests tags based on article content analysis."""
+    
+    def __init__(self):
+        # General topic categories
+        self.topic_patterns = {
+            'technology': [
+                r'(?i)(artificial intelligence|machine learning|AI|ML|deep learning)',
+                r'(?i)(software|programming|coding|development)',
+                r'(?i)(cloud computing|aws|azure|google cloud)',
+                r'(?i)(cybersecurity|security|privacy|encryption)',
+                r'(?i)(mobile|ios|android|app)'
+            ],
+            'business': [
+                r'(?i)(startup|venture capital|vc funding|investment)',
+                r'(?i)(market|stock|shares|investor|trading)',
+                r'(?i)(revenue|profit|earnings|quarterly|fiscal)',
+                r'(?i)(merger|acquisition|partnership|deal)',
+                r'(?i)(ceo|executive|leadership|management)'
+            ],
+            'research': [
+                r'(?i)(study|research|paper|publication)',
+                r'(?i)(scientists|researchers|professors)',
+                r'(?i)(university|institute|laboratory)',
+                r'(?i)(experiment|discovery|breakthrough)',
+                r'(?i)(journal|peer-review|methodology)'
+            ],
+            'policy': [
+                r'(?i)(regulation|policy|legislation|law)',
+                r'(?i)(government|federal|state|agency)',
+                r'(?i)(compliance|guidelines|framework)',
+                r'(?i)(senate|congress|bill|act)',
+                r'(?i)(election|political|campaign|vote)'
+            ]
+        }
+        
+        # Company detection patterns
+        self.company_indicators = [
+            r'(?i)(Inc\.|Corp\.|LLC|Ltd\.)',
+            r'(?i)(Company|Corporation)',
+            r'(?i)(\w+\.com)',
+            r'(?i)announced|released|launched|unveiled'
+        ]
+        
+        # Compile patterns for better performance
+        self.compiled_patterns = {
+            category: [re.compile(pattern) for pattern in patterns]
+            for category, patterns in self.topic_patterns.items()
+        }
+        self.compiled_company_patterns = [re.compile(pattern) 
+                                        for pattern in self.company_indicators]
+        
+        # Load spaCy model for entity recognition
+        try:
+            import spacy
+            self.nlp = spacy.load('en_core_web_sm')
+        except:
+            logging.warning("spaCy model not found. Installing now...")
+            os.system('python -m spacy download en_core_web_sm')
+            import spacy
+            self.nlp = spacy.load('en_core_web_sm')
+    
+    def extract_companies(self, text):
+        """Extract company names from text using NER and pattern matching."""
+        companies = set()
+        
+        # Use spaCy for entity recognition
+        doc = self.nlp(text)
+        for ent in doc.ents:
+            if ent.label_ in ['ORG']:
+                companies.add(ent.text.strip())
+        
+        # Pattern-based company detection
+        sentences = text.split('.')
+        for sentence in sentences:
+            for pattern in self.compiled_company_patterns:
+                if pattern.search(sentence):
+                    # Look for capitalized words before company indicators
+                    words = sentence.split()
+                    for i, word in enumerate(words):
+                        if word[0].isupper() and i > 0 and words[i-1][0].isupper():
+                            company = ' '.join(words[i-1:i+1])
+                            companies.add(company.strip())
+        
+        return list(companies)
+    
+    def analyze_content_type(self, text):
+        """Determine if content is news, analysis, opinion, or tutorial."""
+        indicators = {
+            'news': [
+                r'(?i)(today|yesterday|announced|released)',
+                r'(?i)(breaking|latest|update|report)',
+                r'(?i)(according to|sources say)'
+            ],
+            'analysis': [
+                r'(?i)(analysis|examine|investigate)',
+                r'(?i)(implications|impact|effects)',
+                r'(?i)(trend|pattern|development)'
+            ],
+            'opinion': [
+                r'(?i)(opinion|viewpoint|perspective)',
+                r'(?i)(argue|believe|think|suggest)',
+                r'(?i)(should|must|need to)'
+            ],
+            'tutorial': [
+                r'(?i)(how to|guide|tutorial)',
+                r'(?i)(step by step|learn|implement)',
+                r'(?i)(example|sample|code)'
+            ]
+        }
+        
+        scores = {category: 0 for category in indicators}
+        for category, patterns in indicators.items():
+            for pattern in patterns:
+                matches = len(re.findall(pattern, text))
+                scores[category] += matches
+        
+        # Return the category with highest score
+        if any(scores.values()):
+            return max(scores.items(), key=lambda x: x[1])[0]
+        return 'general'
+    
+    def generate_tags(self, article):
+        """Generate tags based on article content analysis.
+        
+        Args:
+            article (dict): Article dictionary containing title and content
+            
+        Returns:
+            dict: Dictionary containing suggested tags in different categories
+        """
+        text = f"{article.get('title', '')} {article.get('content', '')}"
+        
+        # Initialize tags
+        tags = {
+            'topics': set(),
+            'companies': set(),
+            'content_type': set(),
+            'general': set()
+        }
+        
+        # Extract topics
+        for category, patterns in self.compiled_patterns.items():
+            for pattern in patterns:
+                if pattern.search(text):
+                    tags['topics'].add(category)
+        
+        # Extract companies
+        companies = self.extract_companies(text)
+        tags['companies'].update(companies)
+        
+        # Determine content type
+        content_type = self.analyze_content_type(text)
+        tags['content_type'].add(content_type)
+        
+        # Extract key phrases using spaCy
+        doc = self.nlp(text[:10000])  # Limit text length for performance
+        for chunk in doc.noun_chunks:
+            # Only add noun phrases that are likely to be meaningful
+            if (len(chunk.text.split()) > 1 and  # Multi-word phrases
+                chunk.root.pos_ in ['NOUN', 'PROPN'] and  # Noun-based
+                not any(char.isdigit() for char in chunk.text)):  # No numbers
+                tags['general'].add(chunk.text.strip().lower())
+        
+        # Convert sets to sorted lists
+        return {
+            category: sorted(list(tags))
+            for category, tags in tags.items()
+        }
+
+class FavoritesManager:
+    """Manages saved and favorite articles with persistence and organization features."""
+    
+    def __init__(self, storage_dir='.cache'):
+        """Initialize the favorites manager.
+        
+        Args:
+            storage_dir (str): Directory to store favorites data
+        """
+        self.storage_dir = storage_dir
+        self.favorites_file = os.path.join(storage_dir, 'favorites.json')
+        self.favorites = self._load_favorites()
+        self.tag_generator = TagGenerator()
+        self.export_manager = ExportManager()
+        self.readwise = None  # Lazy initialization
+    
+    def _load_favorites(self):
+        """Load favorites from disk."""
+        try:
+            if os.path.exists(self.favorites_file):
+                with open(self.favorites_file, 'r') as f:
+                    return json.load(f)
+            return {
+                'articles': [],
+                'tags': {},
+                'last_updated': None
+            }
+        except Exception as e:
+            logging.error(f"Error loading favorites: {e}")
+            return {'articles': [], 'tags': {}, 'last_updated': None}
+    
+    def _save_favorites(self):
+        """Save favorites to disk."""
+        try:
+            os.makedirs(self.storage_dir, exist_ok=True)
+            with open(self.favorites_file, 'w') as f:
+                self.favorites['last_updated'] = datetime.now().isoformat()
+                json.dump(self.favorites, f, indent=2)
+        except Exception as e:
+            logging.error(f"Error saving favorites: {e}")
+    
+    def add_favorite(self, article, tags=None):
+        """Add an article to favorites with suggested tags."""
+        try:
+            # Generate suggested tags if none provided
+            if not tags:
+                suggested_tags = self.tag_generator.generate_tags(article)
+                # Flatten suggested tags into a single list
+                tags = []
+                for category, category_tags in suggested_tags.items():
+                    if category == 'companies':
+                        tags.extend([f"company:{tag}" for tag in category_tags])
+                    elif category == 'content_type':
+                        tags.extend([f"type:{tag}" for tag in category_tags])
+                    else:
+                        tags.extend(category_tags)
+            
+            # Create a unique ID for the article
+            article_id = hashlib.md5(article['link'].encode()).hexdigest()
+            
+            # Prepare article data with suggested tags
+            favorite = {
+                'id': article_id,
+                'title': article.get('title', ''),
+                'link': article['link'],
+                'description': article.get('description', ''),
+                'content': article.get('content', ''),
+                'summary': article.get('summary', ''),
+                'pub_date': article.get('pub_date', ''),
+                'added_date': datetime.now().isoformat(),
+                'tags': tags,
+                'suggested_tags': suggested_tags,  # Store full tag analysis
+                'notes': ''
+            }
+            
+            # Update or add article
+            existing = next((a for a in self.favorites['articles'] 
+                           if a['id'] == article_id), None)
+            if existing:
+                existing.update(favorite)
+            else:
+                self.favorites['articles'].append(favorite)
+            
+            # Update tag index
+            for tag in tags:
+                if tag not in self.favorites['tags']:
+                    self.favorites['tags'][tag] = []
+                if article_id not in self.favorites['tags'][tag]:
+                    self.favorites['tags'][tag].append(article_id)
+            
+            self._save_favorites()
+            return True
+            
+        except Exception as e:
+            logging.error(f"Error adding favorite: {e}")
+            return False
+    
+    def remove_favorite(self, article_id):
+        """Remove an article from favorites."""
+        try:
+            # Remove from articles list
+            self.favorites['articles'] = [
+                a for a in self.favorites['articles'] 
+                if a['id'] != article_id
+            ]
+            
+            # Remove from tags
+            for tag_list in self.favorites['tags'].values():
+                if article_id in tag_list:
+                    tag_list.remove(article_id)
+            
+            self._save_favorites()
+            return True
+        except Exception as e:
+            logging.error(f"Error removing favorite: {e}")
+            return False
+    
+    def add_tags(self, article_id, tags):
+        """Add tags to an article."""
+        article = next((a for a in self.favorites['articles'] 
+                       if a['id'] == article_id), None)
+        if article:
+            article['tags'] = list(set(article['tags'] + tags))
+            for tag in tags:
+                if tag not in self.favorites['tags']:
+                    self.favorites['tags'][tag] = []
+                if article_id not in self.favorites['tags'][tag]:
+                    self.favorites['tags'][tag].append(article_id)
+            self._save_favorites()
+            return True
+        return False
+    
+    def remove_tag(self, article_id, tag):
+        """Remove a tag from an article."""
+        article = next((a for a in self.favorites['articles'] 
+                       if a['id'] == article_id), None)
+        if article and tag in article['tags']:
+            article['tags'].remove(tag)
+            if tag in self.favorites['tags']:
+                self.favorites['tags'][tag].remove(article_id)
+            self._save_favorites()
+            return True
+        return False
+    
+    def add_note(self, article_id, note):
+        """Add a note to a favorite article."""
+        article = next((a for a in self.favorites['articles'] 
+                       if a['id'] == article_id), None)
+        if article:
+            article['notes'] = note
+            self._save_favorites()
+            return True
+        return False
+    
+    def get_favorites(self, tag=None):
+        """Get all favorite articles, optionally filtered by tag."""
+        if tag:
+            if tag in self.favorites['tags']:
+                article_ids = self.favorites['tags'][tag]
+                return [a for a in self.favorites['articles'] 
+                       if a['id'] in article_ids]
+            return []
+        return self.favorites['articles']
+    
+    def get_tags(self):
+        """Get all tags and their counts."""
+        return {tag: len(articles) for tag, articles 
+                in self.favorites['tags'].items()}
+    
+    def search_favorites(self, query):
+        """Search favorites by title, content, or tags."""
+        query = query.lower()
+        results = []
+        
+        for article in self.favorites['articles']:
+            if (query in article['title'].lower() or
+                query in article['description'].lower() or
+                query in article['content'].lower() or
+                query in article['notes'].lower() or
+                any(query in tag.lower() for tag in article['tags'])):
+                results.append(article)
+        
+        return results
+    
+    def export_favorites(self, output_file=None, format='html', tag=None, 
+                        include_summary=True):
+        """Export favorites to various formats.
+        
+        Args:
+            output_file (str): Output file path
+            format (str): Export format ('html', 'email', 'pdf', or 'readwise')
+            tag (str): Optional tag to filter articles
+            include_summary (bool): Whether to include article summaries
+        
+        Returns:
+            str: Path to output file or response from export
+        """
+        # Get articles to export
+        articles = self.get_favorites(tag)
+        
+        if not articles:
+            logging.warning("No articles to export")
+            return None
+            
+        # Generate title
+        title = "Favorite Articles"
+        if tag:
+            title += f" - {tag}"
+            
+        if format == 'pdf':
+            return self.export_manager.generate_pdf(
+                articles, title, output_file, include_summary
+            )
+        elif format == 'readwise':
+            try:
+                readwise = self._get_readwise()
+                results = []
+                for article in articles:
+                    result = readwise.save_article(article)
+                    results.append(result)
+                return results
+            except Exception as e:
+                logging.error(f"Error exporting to Readwise: {e}")
+                raise
+        else:
+            # Handle existing formats (html, email)
+            return self.export_manager.export_favorites(output_file, format, tag, include_summary)
+    
+    def export_article(self, article_id, format='html', include_summary=True):
+        """Export a single article.
+        
+        Args:
+            article_id (str): ID of article to export
+            format (str): Export format ('html', 'email', 'pdf', or 'readwise')
+            include_summary (bool): Whether to include article summary
+        """
+        article = next((a for a in self.favorites['articles'] 
+                       if a['id'] == article_id), None)
+        
+        if not article:
+            logging.warning(f"Article not found: {article_id}")
+            return None
+        
+        if format == 'pdf':
+            return self.export_manager.generate_pdf(
+                [article],
+                article['title'],
+                include_summary=include_summary
+            )
+        elif format == 'readwise':
+            try:
+                readwise = self._get_readwise()
+                return readwise.save_article(article)
+            except Exception as e:
+                logging.error(f"Error exporting to Readwise: {e}")
+                raise
+        else:
+            # Handle existing formats (html, email)
+            return self.export_manager.export_article(article_id, format, include_summary)
+    
+    def _get_readwise(self):
+        """Lazy initialization of Readwise client."""
+        if not self.readwise:
+            self.readwise = ReadwiseClient()
+        return self.readwise
+
+class ExportManager:
+    """Handles exporting of articles and favorites to various formats."""
+    
+    def __init__(self):
+        self.html_template = '''
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>{title}</title>
+            <style>
+                body {
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+                    line-height: 1.6;
+                    max-width: 800px;
+                    margin: 0 auto;
+                    padding: 20px;
+                    color: #333;
+                }
+                .article {
+                    margin-bottom: 30px;
+                    padding: 20px;
+                    border: 1px solid #eee;
+                    border-radius: 5px;
+                    background: #fff;
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                }
+                .article h2 {
+                    margin-top: 0;
+                    color: #2c5282;
+                }
+                .article a {
+                    color: #2b6cb0;
+                    text-decoration: none;
+                }
+                .article a:hover {
+                    text-decoration: underline;
+                }
+                .meta {
+                    font-size: 0.9em;
+                    color: #666;
+                    margin-bottom: 10px;
+                }
+                .tags {
+                    margin-top: 10px;
+                }
+                .tag {
+                    display: inline-block;
+                    padding: 2px 8px;
+                    margin: 2px;
+                    background: #edf2f7;
+                    border-radius: 12px;
+                    font-size: 0.85em;
+                    color: #4a5568;
+                }
+                .notes {
+                    margin-top: 10px;
+                    padding: 10px;
+                    background: #fffaf0;
+                    border-left: 3px solid #ed8936;
+                }
+            </style>
+        </head>
+        <body>
+            <h1>{title}</h1>
+            {content}
+        </body>
+        </html>
+        '''
+        
+        self.email_template = '''
+        <html>
+        <body style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <h1 style="color: #2c5282;">{title}</h1>
+            {content}
+        </body>
+        </html>
+        '''
+        
+        # PDF-specific CSS additions
+        self.pdf_css = '''
+            @page {
+                margin: 2.5cm;
+                @top-center {
+                    content: string(title);
+                }
+                @bottom-center {
+                    content: counter(page);
+                }
+            }
+            
+            body {
+                font-size: 11pt;
+            }
+            
+            h1 {
+                string-set: title content();
+                page-break-before: always;
+            }
+            
+            .article {
+                page-break-inside: avoid;
+            }
+            
+            @media print {
+                a {
+                    color: #000;
+                    text-decoration: none;
+                }
+                
+                .article {
+                    border: none;
+                    box-shadow: none;
+                }
+            }
+        '''
+    
+    def format_article_html(self, article, include_summary=True, for_email=False):
+        """Format a single article as HTML."""
+        template = '''
+        <div class="{article_class}">
+            <h2><a href="{link}" target="_blank">{title}</a></h2>
+            <div class="{meta_class}">
+                Published: {pub_date}
+                {added_date}
+            </div>
+            {summary}
+            {notes}
+            {tags}
+        </div>
+        '''
+        
+        if for_email:
+            article_class = 'article" style="margin-bottom: 30px; padding: 15px; border: 1px solid #eee;'
+            meta_class = 'meta" style="font-size: 0.9em; color: #666; margin-bottom: 10px;'
+            tag_style = 'display: inline-block; padding: 2px 8px; margin: 2px; background: #edf2f7; border-radius: 12px; font-size: 0.85em; color: #4a5568;'
+        else:
+            article_class = 'article'
+            meta_class = 'meta'
+            tag_style = None
+            
+        # Format tags
+        if article.get('tags'):
+            tags_html = '<div class="tags">'
+            for tag in article['tags']:
+                if for_email:
+                    tags_html += f'<span style="{tag_style}">{tag}</span> '
+                else:
+                    tags_html += f'<span class="tag">{tag}</span> '
+            tags_html += '</div>'
+        else:
+            tags_html = ''
+        
+        # Format notes if present
+        notes_html = ''
+        if article.get('notes'):
+            if for_email:
+                notes_html = f'<div style="margin-top: 10px; padding: 10px; background: #fffaf0; border-left: 3px solid #ed8936;">{article["notes"]}</div>'
+            else:
+                notes_html = f'<div class="notes">{article["notes"]}</div>'
+        
+        # Format summary
+        summary_html = ''
+        if include_summary and article.get('summary'):
+            summary_html = f'<p>{article["summary"]}</p>'
+        
+        # Format dates
+        added_date = ''
+        if article.get('added_date'):
+            added_date = f' | Added: {article["added_date"]}'
+        
+        return template.format(
+            article_class=article_class,
+            meta_class=meta_class,
+            link=article['link'],
+            title=article['title'],
+            pub_date=article.get('pub_date', 'Unknown'),
+            added_date=added_date,
+            summary=summary_html,
+            notes=notes_html,
+            tags=tags_html
+        )
+    
+    def generate_html(self, articles, title, include_summary=True):
+        """Generate full HTML document for articles."""
+        content = ''.join(
+            self.format_article_html(article, include_summary)
+            for article in articles
+        )
+        return self.html_template.format(title=title, content=content)
+    
+    def generate_email_html(self, articles, title, include_summary=True):
+        """Generate email-friendly HTML for articles."""
+        content = ''.join(
+            self.format_article_html(article, include_summary, for_email=True)
+            for article in articles
+        )
+        return self.email_template.format(title=title, content=content)
+    
+    def generate_pdf(self, articles, title, output_file=None, include_summary=True):
+        """Generate PDF document from articles.
+        
+        Args:
+            articles (list): List of articles to include
+            title (str): Document title
+            output_file (str): Output file path
+            include_summary (bool): Whether to include article summaries
+            
+        Returns:
+            str: Path to generated PDF file
+        """
+        try:
+            from weasyprint import HTML, CSS
+            from weasyprint.text.fonts import FontConfiguration
+        except ImportError:
+            logging.error("WeasyPrint not installed. Installing required dependencies...")
+            os.system('pip install weasyprint')
+            from weasyprint import HTML, CSS
+            from weasyprint.text.fonts import FontConfiguration
+        
+        # Generate HTML content
+        html_content = self.generate_html(articles, title, include_summary)
+        
+        # Configure fonts
+        font_config = FontConfiguration()
+        
+        # Create PDF
+        if not output_file:
+            output_file = f'export_{datetime.now().strftime("%Y%m%d_%H%M%S")}.pdf'
+        
+        HTML(string=html_content).write_pdf(
+            output_file,
+            stylesheets=[
+                CSS(string=self.pdf_css),
+                CSS(string='@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap");'),
+            ],
+            font_config=font_config
+        )
+        
+        return output_file
+
+class ReadwiseClient:
+    """Client for interacting with Readwise Reader API."""
+    
+    def __init__(self, api_token=None):
+        """Initialize Readwise client.
+        
+        Args:
+            api_token (str): Readwise Reader API token
+        """
+        self.api_token = api_token or get_env_var('READWISE_TOKEN')
+        if not self.api_token:
+            raise ValueError("Readwise API token not provided")
+        
+        self.base_url = "https://readwise.io/api/v3"
+        self.headers = {
+            'Authorization': f'Token {self.api_token}',
+            'Content-Type': 'application/json'
+        }
+    
+    def save_article(self, article):
+        """Save an article to Readwise Reader.
+        
+        Args:
+            article (dict): Article to save
+            
+        Returns:
+            dict: Response from Readwise API
+        """
+        url = f"{self.base_url}/save"
+        
+        # Prepare tags
+        tags = []
+        if article.get('tags'):
+            tags = [tag.replace('company:', 'company/').replace('type:', 'type/')
+                   for tag in article['tags']]
+        
+        # Prepare data
+        data = {
+            'url': article['link'],
+            'title': article['title'],
+            'summary': article.get('summary', ''),
+            'notes': article.get('notes', ''),
+            'tags': tags,
+            'should_clean_html': True
+        }
+        
+        try:
+            response = requests.post(url, json=data, headers=self.headers)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            logging.error(f"Error saving to Readwise: {e}")
+            raise
+
 class RSSReader:
     """
     Main class that handles RSS feed processing, article summarization, and clustering.
@@ -631,10 +1427,11 @@ class RSSReader:
             api_key (str): Anthropic API key for Claude
             cache_dir (str): Directory for caching summaries and feed data
         """
-        self.anthropic = Anthropic(api_key=api_key or os.getenv('ANTHROPIC_API_KEY'))
+        self.anthropic = Anthropic(api_key=api_key or get_env_var('ANTHROPIC_API_KEY'))
         self.model = "claude-3-haiku-20240307"
         self.cache = SummaryCache(cache_dir=cache_dir)
         self._sentence_transformer = None  # Lazy-loaded for performance
+        self.favorites = FavoritesManager(cache_dir)  # Initialize favorites manager
         
         # Configure batch processing
         self.batch_size = 25
@@ -651,7 +1448,7 @@ class RSSReader:
         
         # Configure user agent and headers
         self.headers = {
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
         
         # Initialize feed processing settings
@@ -744,8 +1541,8 @@ class RSSReader:
         cache_key = self.get_cache_key(url)
         cache_file = os.path.join(self.cache_dir, f"{cache_key}.json")
         
-        if os.path.exists(cache_file):
-            try:
+        try:
+            if os.path.exists(cache_file):
                 with open(cache_file, 'r') as f:
                     cached_data = json.load(f)
                 
@@ -759,8 +1556,8 @@ class RSSReader:
                 if current_time - cached_time < timedelta(hours=24):
                     print(f"Retrieved from cache: {url}")
                     return cached_data['content']
-            except Exception as e:
-                print(f"Error reading cache: {e}")
+        except Exception as e:
+            print(f"Error reading cache: {e}")
         
         return None
 
@@ -881,7 +1678,7 @@ class RSSReader:
             # Skip paywalled sites
             if any(domain in url.lower() for domain in self.protected_domains):
                 logger.warning(f"Protected content detected, trying bypass methods: {url}")
-                return self.fetch_with_bypass(url)
+                return None, None
 
             # Try direct fetch first
             response = requests.get(url, headers=self.headers, timeout=10)
@@ -974,28 +1771,110 @@ class RSSReader:
             <html>
             <head>
                 <meta charset="UTF-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <meta name="viewport" content="width=device-width, initial-scale=1">
                 <title>AI News Summary</title>
                 <style>
-                    body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; line-height: 1.6; color: #333; max-width: 1200px; margin: 0 auto; padding: 20px; background-color: #f5f5f5; }}
-                    h1 {{ color: #2c3e50; text-align: center; margin-bottom: 40px; }}
-                    .article {{ background: white; border-radius: 8px; padding: 25px; margin-bottom: 30px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
-                    .article.cluster {{ border-left: 4px solid #3498db; }}
-                    .article h2 {{ color: #2c3e50; margin-top: 0; margin-bottom: 15px; }}
-                    .article-meta {{ color: #7f8c8d; font-size: 0.9em; margin-bottom: 20px; }}
-                    .article-summary {{ background: #f8f9fa; border-radius: 6px; padding: 20px; margin-bottom: 20px; }}
-                    .summary-header {{ margin-bottom: 15px; color: #2c3e50; }}
-                    .summary-content {{ margin-bottom: 15px; line-height: 1.7; }}
-                    .summary-footer {{ color: #7f8c8d; font-size: 0.9em; display: flex; justify-content: space-between; border-top: 1px solid #eee; padding-top: 15px; margin-top: 15px; }}
-                    .article-footer {{ margin-top: 20px; }}
-                    .article-link {{ color: #3498db; text-decoration: none; transition: color 0.2s; }}
-                    .article-link:hover {{ color: #2980b9; text-decoration: underline; }}
-                    .article-sources {{ margin-top: 20px; padding-top: 20px; border-top: 1px solid #eee; }}
-                    .article-sources h3 {{ color: #2c3e50; margin-top: 0; margin-bottom: 15px; font-size: 1.1em; }}
-                    .source-list {{ list-style: none; padding: 0; margin: 0; }}
-                    .source-list li {{ margin-bottom: 10px; padding-left: 20px; position: relative; }}
-                    .source-list li:before {{ content: "•"; color: #3498db; position: absolute; left: 0; }}
-                    .model-info, .timestamp-info {{ display: inline-block; padding: 4px 8px; border-radius: 4px; background: #e8e8e8; font-size: 0.85em; }}
+                    body {
+                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+                        line-height: 1.6;
+                        max-width: 1200px;
+                        margin: 0 auto;
+                        padding: 20px;
+                        background-color: #f5f5f5;
+                    }
+                    h1 {
+                        color: #333;
+                        border-bottom: 2px solid #ddd;
+                        padding-bottom: 10px;
+                    }
+                    .article {
+                        background: white;
+                        border-radius: 8px;
+                        padding: 25px;
+                        margin-bottom: 30px;
+                        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                    }
+                    .article.cluster {
+                        border-left: 4px solid #3498db;
+                    }
+                    .article h2 {
+                        color: #2c3e50;
+                        margin-top: 0;
+                        margin-bottom: 15px;
+                    }
+                    .article-meta {
+                        color: #7f8c8d;
+                        font-size: 0.9em;
+                        margin-bottom: 20px;
+                    }
+                    .article-summary {
+                        background: #f8f9fa;
+                        border-radius: 6px;
+                        padding: 20px;
+                        margin-bottom: 20px;
+                    }
+                    .summary-header {
+                        margin-bottom: 15px;
+                        color: #2c3e50;
+                    }
+                    .summary-content {
+                        margin-bottom: 15px;
+                        line-height: 1.7;
+                    }
+                    .summary-footer {
+                        color: #7f8c8d;
+                        font-size: 0.9em;
+                        display: flex;
+                        justify-content: space-between;
+                        border-top: 1px solid #eee;
+                        padding-top: 15px;
+                        margin-top: 15px;
+                    }
+                    .article-footer {
+                        margin-top: 20px;
+                    }
+                    .article-link {
+                        color: #3498db;
+                        text-decoration: none;
+                    }
+                    .article-link:hover {
+                        color: #2980b9;
+                        text-decoration: underline;
+                    }
+                    .article-sources {
+                        margin-top: 20px;
+                        padding-top: 20px;
+                        border-top: 1px solid #eee;
+                    }
+                    .article-sources h3 {
+                        color: #2c3e50;
+                        margin-top: 0;
+                        margin-bottom: 15px;
+                        font-size: 1.1em;
+                    }
+                    .source-list {
+                        list-style: none;
+                        padding: 0;
+                        margin: 0;
+                    }
+                    .source-list li {
+                        margin-bottom: 10px;
+                        padding-left: 20px;
+                        position: relative;
+                    }
+                    .source-list li:before {
+                        content: "•";
+                        color: #3498db;
+                        position: absolute;
+                        left: 0;
+                    }
+                    .model-info, .timestamp-info {
+                        display: inline-block;
+                        padding: 4px 8px;
+                        border-radius: 4px;
+                        background: #e8e8e8;
+                        font-size: 0.85em;
+                    }
                 </style>
             </head>
             <body>
@@ -1055,7 +1934,7 @@ class RSSReader:
                         for article in cluster:
                             source_list.append({
                                 'title': article.get('title', 'No title'),
-                                'link': article.get('link', '#'),
+                                'link': article['link'],
                                 'source': article.get('feed_source', 'Unknown Source')
                             })
                         
@@ -1295,58 +2174,6 @@ Please summarize the following text in this style:
             logger.error(f"Error in process_feeds: {str(e)}")
             raise
 
-    def process_feed_entry(self, entry):
-        """Process a single feed entry."""
-        try:
-            # Extract article URL
-            url = entry.get('link', '')
-            if not url:
-                logger.warning("Entry has no URL")
-                return None
-                
-            # Get the article content
-            content = entry.get('content', [{}])[0].get('value', '') or entry.get('summary', '')
-            if not content:
-                # If no content in feed, try fetching from URL
-                content, _ = self.fetch_article_content(url)
-                if not content:
-                    logger.warning(f"No content found for article: {url}")
-                    return None
-            
-            # Clean and summarize content if needed
-            summary = None
-            if content and len(content) > 50:  # Lower threshold to ensure we get summaries
-                try:
-                    summary = self.summarize_text(content, entry.get('title'))
-                    logging.info(f"Generated summary for article: {entry.get('title', 'Unknown title')}")
-                except Exception as e:
-                    logging.error(f"Failed to generate summary: {str(e)}")
-            
-            # Get publication date
-            published = entry.get('published', entry.get('updated', 'No date available'))
-            
-            # Extract source name
-            source = entry.get('feed_source')
-            if not source:
-                source = self.get_publication_name(url, feed_entry=entry)
-                if source == "Unknown source":
-                    # Try harder to get a source name
-                    source = self.get_publication_name(url)
-        
-            return {
-                'title': entry.get('title', 'No title available'),
-                'link': url,
-                'published': published,
-                'content': content,
-                'summary': summary if summary else None,  # Store the entire summary dictionary
-                'model': summary.get('model', 'Fallback') if summary else 'Fallback',
-                'source': source  # Use the improved source extraction
-            }
-            
-        except Exception as e:
-            logger.error(f"Error processing feed entry {entry.get('link', 'Unknown URL')}: {str(e)}")
-            return None
-
     def load_feed_urls(self, feeds_file):
         """Load feed URLs from a file."""
         try:
@@ -1374,48 +2201,46 @@ Please summarize the following text in this style:
     def process_article(self, url):
         """Process a single article."""
         try:
-            # Fetch article content
-            content, soup = self.fetch_article_content(url)
-
-            if not content or not soup:
-                logger.error(f"Failed to fetch content for {url}")
+            # Extract article content
+            article_text, soup = self.fetch_article_content(url)
+            
+            if not article_text:
+                logging.error(f"Could not extract content from {url}")
                 return None
                 
-            # Extract metadata safely
-            title = soup.find('title')
-            title = title.text.strip() if title else "No title available"
+            # Get article title
+            title = soup.title.string if soup and soup.title else "No title available"
             
-            published = soup.find('meta', attrs={'name': 'date'})
-            published = published.get('content') if published else None
-            if not published:
-                # Try other common date meta tags
-                published = (
-                    soup.find('meta', attrs={'property': 'article:published_time'}) or
-                    soup.find('meta', attrs={'name': 'article:published_time'}) or
-                    soup.find('meta', attrs={'name': 'publication_date'})
-                )
-                published = published.get('content') if published else "No date available"
-            
-            # Clean and summarize content if needed
-            summary = None
-            if content and len(content) > 50:  # Lower threshold to ensure we get summaries
-                try:
-                    summary = self.summarize_text(content, title)
-                    logging.info(f"Generated summary for article: {title}")
-                except Exception as e:
-                    logging.error(f"Failed to generate summary: {str(e)}")
-                    
+            # Generate summary
+            try:
+                summary_dict = self.summarize_text(article_text, title)
+                if not summary_dict:
+                    summary_dict = {
+                        'headline': title,
+                        'summary': "Failed to generate summary",
+                        'model': 'Error',
+                        'timestamp': str(int(time.time()))
+                    }
+                logging.info(f"Generated summary for article: {title}")
+            except Exception as e:
+                logging.error(f"Error generating summary for {url}: {str(e)}")
+                summary_dict = {
+                    'headline': title,
+                    'summary': "Summary generation failed",
+                    'model': 'Error',
+                    'timestamp': str(int(time.time()))
+                }
+                
             return {
                 'title': title,
-                'link': url,
-                'published': published,
-                'content': content,
-                'summary': summary if summary else None,  # Store the entire summary dictionary
-                'model': summary.get('model', 'Fallback') if summary else 'Fallback',
-                'source': self.get_publication_name(url)  # Add feed source
+                'url': url,
+                'content': article_text,
+                'summary': summary_dict,
+                'published': datetime.now(timezone.utc).isoformat()
             }
+            
         except Exception as e:
-            logger.error(f"Error processing article {url}: {str(e)}")
+            logging.error(f"Error processing article {url}: {str(e)}")
             return None
 
     def fetch_article_content(self, url):
@@ -1634,6 +2459,8 @@ Please summarize the following text in this style:
             for article in articles:
                 title = article.get('title', '')
                 summary_dict = article.get('summary', {})
+                if not isinstance(summary_dict, dict):
+                    summary_dict = {}
                 summary = summary_dict.get('summary', '') if summary_dict else ''
                 combined_text = f"{title} {summary}".strip()
                 texts.append(combined_text)
@@ -1646,7 +2473,7 @@ Please summarize the following text in this style:
             
             # Initialize clusters
             clusters = []
-            used_indices = []
+            used_indices = set()  # Use a set for better performance
             
             # Create clusters based on similarity
             for i in range(len(articles)):
@@ -1655,7 +2482,7 @@ Please summarize the following text in this style:
                     
                 # Start new cluster
                 cluster = [articles[i]]
-                used_indices.append(i)
+                used_indices.add(i)
                 
                 # Find similar articles
                 for j in range(i + 1, len(articles)):
@@ -1664,66 +2491,91 @@ Please summarize the following text in this style:
                         
                     if similarity_matrix[i][j] >= similarity_threshold:
                         cluster.append(articles[j])
-                        used_indices.append(j)
+                        used_indices.add(j)
                         
                 clusters.append(cluster)
                 
-            # Sort clusters by size and limit to max_clusters
-            clusters.sort(key=len, reverse=True)
-            clusters = clusters[:max_clusters]
-            
-            # Add remaining articles as single-item clusters
-            remaining_articles = [
-                articles[i] for i in range(len(articles))
-                if i not in used_indices
-            ]
-            
-            for article in remaining_articles:
-                clusters.append([article])
-                
+                # Stop if we've reached max clusters
+                if len(clusters) >= max_clusters:
+                    break
+                    
+            # Add remaining articles as single-article clusters
+            for i in range(len(articles)):
+                if i not in used_indices:
+                    clusters.append([articles[i]])
+                    
             return clusters
             
         except Exception as e:
-            logging.error(f"Error in clustering articles: {str(e)}")
-            logging.debug(traceback.format_exc())
+            logging.error(f"Error clustering articles: {str(e)}")
             # Return each article as its own cluster
             return [[article] for article in articles]
 
     @track_performance()
-    def process_feeds_with_clustering(self, feeds_file='rss_test.txt'):
-        """
-        Process RSS feeds with article clustering.
-        
-        Args:
-            feeds_file (str): Path to file containing RSS feed URLs
-        
-        Returns:
-            dict: Processed results with individual and clustered summaries
-        """
+    def generate_html_output(self, clusters, output_dir='output'):
+        """Generate HTML output for the clusters."""
         try:
-            # Process feeds
-            articles = self.process_feeds(feeds_file)
-            if not articles:
-                return
-            
-            # Cluster similar articles
-            clusters = self.cluster_similar_articles(articles)
-            
-            # Generate output file paths
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'output')
+            # Create output directory if it doesn't exist
             os.makedirs(output_dir, exist_ok=True)
             
+            # Generate output filename with timestamp
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             output_file = os.path.join(output_dir, f'rss_summary_{timestamp}.html')
             
-            # Write to HTML
-            self.write_to_html(articles, output_file)
+            # Start HTML content
+            html_content = '''
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1">
+                <title>AI News Summary</title>
+            <style>
+                body {
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+                    line-height: 1.6;
+                    max-width: 1200px;
+                    margin: 0 auto;
+                    padding: 20px;
+                    background-color: #f5f5f5;
+                }
+                /* ... rest of CSS styles ... */
+            </style>
+        </head>
+        <body>
+            <h1>AI News Summary</h1>
+            '''
             
+            # Process each cluster
+            for cluster in clusters:
+                try:
+                    html_content += self._process_cluster(cluster)
+                except Exception as cluster_error:
+                    logger.error(f"Error processing cluster: {str(cluster_error)}")
+                    continue
+        
+            # Add footer and close HTML
+            html_content += self._generate_html_footer()
+        
+            # Write to file
+            with open(output_file, 'w', encoding='utf-8') as f:
+                f.write(html_content)
+                
             logger.info(f"✅ Output written to {output_file}")
-            
+            return output_file
+        
         except Exception as e:
-            logger.error(f"Error in process_feeds_with_clustering: {str(e)}")
-            raise
+            logger.error(f"Error generating HTML output: {str(e)}")
+            if html_content:
+                # Try to save what we have so far
+                try:
+                    error_file = os.path.join(output_dir, f'rss_summary_error_{timestamp}.html')
+                    with open(error_file, 'w', encoding='utf-8') as f:
+                        f.write(html_content)
+                    logger.info(f"Partial output saved to {error_file}")
+                except Exception as save_error:
+                    logger.error(f"Could not save partial output: {str(save_error)}")
+            return None
 
     def exponential_backoff(self, attempt):
         """Generate exponential backoff with jitter."""
@@ -1818,9 +2670,7 @@ Please summarize the following text in this style:
         """
         try:
             headers = {
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8'
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
             }
             response = requests.get(url, headers=headers, timeout=10)
             response.raise_for_status()
@@ -1851,7 +2701,7 @@ Please summarize the following text in this style:
             archive_url = f"https://web.archive.org/web/{encoded_url}"
             
             headers = {
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36'
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
             }
             
             response = requests.get(archive_url, headers=headers, timeout=10)
@@ -2017,19 +2867,25 @@ Please summarize the following text in this style:
             logger.error(f"Error extracting article content: {str(e)}")
             return None, None
 
-    def summarize_text(self, text, max_retries=3):
+    def summarize_text(self, text, title=None, max_retries=3):
         """
         Generate a summary of the given text using Claude API.
         
         Args:
             text (str): The text to summarize
+            title (str): Optional title for context
             max_retries (int): Maximum number of retries for API calls
             
         Returns:
             Dict: Summary data including the summary text and metadata
         """
         if not text:
-            return None
+            return {
+                'headline': title or 'No headline available',
+                'summary': 'No content available for summarization',
+                'model': self.model,
+                'timestamp': str(int(time.time()))
+            }
             
         # Generate cache key
         cache_key = f"summary_{hashlib.md5(text.encode()).hexdigest()}"
@@ -2043,77 +2899,61 @@ Please summarize the following text in this style:
         for attempt in range(max_retries):
             try:
                 # Make Claude API call with detailed error handling
+                prompt = f"""Please provide a concise summary of the following text in 3-4 sentences. Focus on the key points and newsworthy information:
+
+{text}
+
+Return the summary in this JSON format:
+{{
+    "headline": "Brief headline that captures main point",
+    "summary": "3-4 sentence summary of key points"
+}}"""
+
                 response = self.anthropic.messages.create(
                     model=self.model,
                     max_tokens=1024,
-                    system="You are an expert at creating concise, informative summaries. Your summaries are objective, factual, and capture key points in 3-5 clear sentences. For multiple articles, provide a JSON response with 'headline' and 'summary' fields. For single articles, provide a direct summary.",
-                    messages=[
-                        {"role": "user", "content": text}
-                    ]
+                    temperature=0.3,
+                    messages=[{"role": "user", "content": prompt}]
                 )
                 
-                summary_text = response.content[0].text
+                summary_text = response.content[0].text.strip()
                 
-                # Clean up summary text by removing common prefixes
-                prefixes_to_remove = [
-                    "Here is a concise, informative summary of the article:",
-                    "Here is a concise, informative summary of the text:",
-                    "Here is a concise, informative summary of the provided text:",
-                    "Here's a concise summary of the text:",
-                    "Here's a concise, informative summary:",
-                    "Here's a summary of the article:",
-                    "Here is a summary of the article:",
-                    "Here's a brief summary:",
-                    "Here is a brief summary:",
-                    "Summary:",
-                    "Article summary:",
-                    "Text summary:",
-                    "In summary:",
-                ]
-                
-                summary_text = summary_text.strip()
-                for prefix in prefixes_to_remove:
-                    if summary_text.lower().startswith(prefix.lower()):
-                        summary_text = summary_text[len(prefix):].strip()
-                
-                # Remove any leading colons after cleaning prefixes
-                summary_text = summary_text.lstrip(':').strip()
-                
-                # Validate summary text
-                if not summary_text:
-                    logging.error("Empty summary text")
-                    return None
-                
-                # Try to parse as JSON for cluster summaries
+                # Try to parse as JSON
                 try:
+                    # Remove any potential markdown code block markers
+                    summary_text = summary_text.replace('```json', '').replace('```', '').strip()
                     summary_dict = json.loads(summary_text)
-                    if isinstance(summary_dict, dict) and 'headline' in summary_dict and 'summary' in summary_dict:
+                    
+                    if isinstance(summary_dict, dict):
+                        # Ensure required fields exist
+                        summary_dict['headline'] = summary_dict.get('headline', title or 'No headline available')
+                        summary_dict['summary'] = summary_dict.get('summary', 'Summary not available')
                         summary_dict['model'] = self.model
-                        summary_dict['timestamp'] = time.time()
+                        summary_dict['timestamp'] = str(int(time.time()))
+                        
                         self.cache.set(cache_key, summary_dict)
                         return summary_dict
-                except:
-                    pass
-                
-                # If not JSON or parsing failed, treat as single article summary
-                sentences = summary_text.split('.')
-                headline = sentences[0].strip()
-                
-                summary = {
-                    'summary': summary_text,
-                    'headline': headline,
-                    'model': self.model,
-                    'timestamp': time.time()
-                }
-                
-                # Cache the summary
-                self.cache.set(cache_key, summary)
-                return summary
-                
+                        
+                except json.JSONDecodeError:
+                    # If JSON parsing fails, create a basic summary
+                    summary_dict = {
+                        'headline': title or 'No headline available',
+                        'summary': summary_text,
+                        'model': self.model,
+                        'timestamp': str(int(time.time()))
+                    }
+                    self.cache.set(cache_key, summary_dict)
+                    return summary_dict
+                    
             except Exception as e:
-                logging.error(f"Error in Claude API call (attempt {attempt + 1}/{max_retries}): {str(e)}")
+                logger.error(f"Error in Claude API call (attempt {attempt + 1}/{max_retries}): {str(e)}")
                 if attempt == max_retries - 1:
-                    return None
+                    return {
+                        'headline': title or 'No headline available',
+                        'summary': 'Failed to generate summary',
+                        'model': 'Error',
+                        'timestamp': str(int(time.time()))
+                    }
                 time.sleep(1)  # Wait before retrying
     
     @track_performance()
@@ -2143,6 +2983,8 @@ Please summarize the following text in this style:
             for article in articles:
                 title = article.get('title', '')
                 summary_dict = article.get('summary', {})
+                if not isinstance(summary_dict, dict):
+                    summary_dict = {}
                 summary = summary_dict.get('summary', '') if summary_dict else ''
                 combined_text = f"{title} {summary}".strip()
                 texts.append(combined_text)
@@ -2155,7 +2997,7 @@ Please summarize the following text in this style:
             
             # Initialize clusters
             clusters = []
-            used_indices = []
+            used_indices = set()  # Use a set for better performance
             
             # Create clusters based on similarity
             for i in range(len(articles)):
@@ -2164,7 +3006,7 @@ Please summarize the following text in this style:
                     
                 # Start new cluster
                 cluster = [articles[i]]
-                used_indices.append(i)
+                used_indices.add(i)
                 
                 # Find similar articles
                 for j in range(i + 1, len(articles)):
@@ -2173,7 +3015,7 @@ Please summarize the following text in this style:
                         
                     if similarity_matrix[i][j] >= similarity_threshold:
                         cluster.append(articles[j])
-                        used_indices.append(j)
+                        used_indices.add(j)
                         
                 clusters.append(cluster)
                 
@@ -2181,7 +3023,7 @@ Please summarize the following text in this style:
             clusters.sort(key=len, reverse=True)
             clusters = clusters[:max_clusters]
             
-            # Add remaining articles as single-item clusters
+            # Add remaining articles as single-article clusters
             remaining_articles = [
                 articles[i] for i in range(len(articles))
                 if i not in used_indices
@@ -2199,285 +3041,234 @@ Please summarize the following text in this style:
             return [[article] for article in articles]
 
     @track_performance()
-    def generate_html_output(self, clusters, output_dir='output'):
-        """Generate HTML output for the clusters."""
-        try:
-            # Create output directory if it doesn't exist
-            os.makedirs(output_dir, exist_ok=True)
-            
-            # Generate timestamp for filename
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            output_file = os.path.join(output_dir, f'rss_summary_{timestamp}.html')
-            
-            # Start HTML content
-            html_content = '''
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <meta charset="UTF-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>RSS Feed Summary</title>
-                <style>
-                    body {
-                        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-                        line-height: 1.6;
-                        max-width: 1200px;
-                        margin: 0 auto;
-                        padding: 20px;
-                        background-color: #f5f5f5;
-                    }
-                    h1 {
-                        color: #333;
-                        border-bottom: 2px solid #ddd;
-                        padding-bottom: 10px;
-                    }
-                    .cluster {
-                        background: white;
-                        border-radius: 8px;
-                        padding: 20px;
-                        margin-bottom: 30px;
-                        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                    }
-                    .cluster-header {
-                        margin-bottom: 20px;
-                    }
-                    .cluster-title {
-                        color: #1a1a1a;
-                        margin: 0 0 10px 0;
-                        font-size: 24px;
-                    }
-                    .cluster-summary {
-                        color: #333;
-                        font-size: 16px;
-                        margin-bottom: 20px;
-                        line-height: 1.8;
-                    }
-                    .sources {
-                        border-top: 1px solid #eee;
-                        padding-top: 15px;
-                    }
-                    .sources h3 {
-                        color: #666;
-                        font-size: 18px;
-                        margin: 0 0 10px 0;
-                    }
-                    .source-list {
-                        display: flex;
-                        flex-wrap: wrap;
-                        gap: 10px;
-                    }
-                    .source-item {
-                        background: #f8f8f8;
-                        border-radius: 4px;
-                        padding: 10px;
-                    }
-                    .source-title {
-                        color: #0066cc;
-                        text-decoration: none;
-                        font-weight: 500;
-                    }
-                    .source-title:hover {
-                        text-decoration: underline;
-                    }
-                    .source-info {
-                        color: #666;
-                        font-size: 14px;
-                        margin-top: 5px;
-                    }
-                    .metadata {
-                        color: #888;
-                        font-size: 14px;
-                        margin-top: 10px;
-                    }
-                </style>
-            </head>
-            <body>
-                <h1>RSS Feed Summary</h1>
-                <p class="metadata">Generated on: ''' + datetime.now().strftime('%Y-%m-%d %H:%M:%S') + '''</p>
-            '''
-            
-            # Process each cluster
-            for cluster in clusters:
-                if len(cluster) == 1:
-                    # Single article - display as before
-                    article = cluster[0]
-                    summary_dict = article.get('summary', {})
-                    
-                    if isinstance(summary_dict, str):
-                        try:
-                            summary_dict = json.loads(summary_dict)
-                        except:
-                            summary_dict = {'headline': 'No Headline', 'summary': summary_dict}
-                    
-                    headline = str(summary_dict.get('headline', article.get('title', 'No headline available')))
-                    summary_text = str(summary_dict.get('summary', 'No summary available'))
-                    model = str(summary_dict.get('model', 'Unknown'))
-                    timestamp = summary_dict.get('timestamp')
-                    timestamp_str = datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S') if timestamp else 'Unknown'
-                    source = str(article.get('feed_source', 'Unknown Source'))
-                    link = str(article.get('link', '#'))
-                    
-                    html_content += f'''
-                    <div class="cluster">
-                        <div class="cluster-header">
-                            <h2 class="cluster-title">{html.escape(headline)}</h2>
-                            <div class="cluster-summary">{html.escape(summary_text)}</div>
-                        </div>
-                        <div class="sources">
-                            <h3>Source:</h3>
-                            <div class="source-list">
-                                <div class="source-item">
-                                    <a href="{html.escape(link)}" class="source-title" target="_blank">
-                                        {html.escape(source)}
-                                    </a>
-                                    <div class="source-info">
-                                        Published: {html.escape(article.get('published', 'Unknown'))}
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="metadata">
-                            Model: {html.escape(model)} | Generated: {html.escape(timestamp_str)}
-                        </div>
-                    </div>
-                    '''
-                else:
-                    # Multiple similar articles - generate combined summary
-                    summary = self.generate_cluster_summary(cluster)
-                    if summary:
-                        if isinstance(summary, str):
-                            try:
-                                summary = json.loads(summary)
-                            except:
-                                summary = {'headline': 'No Headline', 'summary': summary}
-                        
-                        headline = str(summary.get('headline', 'Related Articles'))
-                        summary_text = str(summary.get('summary', 'No summary available'))
-                        model = str(summary.get('model', 'Unknown'))
-                        timestamp = summary.get('timestamp')
-                        timestamp_str = datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S') if timestamp else 'Unknown'
-                        
-                        # Get sources from the cluster
-                        source_list = []
-                        for article in cluster:
-                            source_list.append({
-                                'title': str(article.get('title', 'No title')),
-                                'source': str(article.get('feed_source', 'Unknown Source')),
-                                'link': str(article.get('link', '#')),
-                                'pub_date': str(article.get('pub_date', ''))
-                            })
-                        summary_dict['sources'] = source_list
-                        
-                        html_content += f'''
-                        <div class="article cluster">
-                            <h2>{html.escape(headline)}</h2>
-                            <div class="article-meta">
-                                From multiple sources:
-                                <ul class="source-list">
-                        '''
-                        
-                        for source in source_list:
-                            html_content += f'''
-                                <li>
-                                    <a href="{html.escape(source['link'])}" target="_blank">
-                                        {html.escape(source['title'])} ({html.escape(source['source'])})
-                                    </a>
-                                </li>
-                            '''
-                        
-                        html_content += f'''
-                                </ul>
-                            </div>
-                            <div class="article-summary">{html.escape(summary_text)}</div>
-                            <div class="metadata">
-                                Model: {html.escape(model)} | Generated: {html.escape(str(timestamp_str))}
-                            </div>
-                        </div>
-                        '''
-            
-            # Close HTML
-            html_content += '''
-            </body>
-            </html>
-            '''
-            
-            # Write to file
-            with open(output_file, 'w', encoding='utf-8') as f:
-                f.write(html_content)
-            
-            return output_file
-            
-        except Exception as e:
-            logging.error(f"Error generating HTML output: {str(e)}")
-            return None
-            
-    def generate_cluster_summary(self, cluster):
+    def process_feeds_with_clustering(self, feeds_file='rss_test.txt'):
         """
-        Generate a summary for a cluster of similar articles.
+        Process RSS feeds with article clustering.
         
         Args:
-            cluster (List[Dict]): List of similar articles to summarize together
-            
+            feeds_file (str): Path to file containing RSS feed URLs
+        
         Returns:
-            Dict: Summary data including the summary text, headline, and metadata
+            list: List of article clusters
         """
         try:
-            # Extract titles and content for summarization
-            titles = []
-            contents = []
-            for article in cluster:
-                titles.append(article.get('title', ''))
-                contents.append(article.get('content', ''))
+            # Process feeds
+            articles = self.process_feeds(feeds_file)
+            if not articles:
+                return []
             
-            # Create prompt for the model
-            prompt = f'''Here are {len(titles)} related articles:
-
-            Titles:
-            {chr(10).join(f"- {title}" for title in titles)}
+            # Cluster similar articles
+            clusters = self.cluster_similar_articles(articles)
             
-            Contents:
-            {chr(10).join(contents)}
+            return clusters
             
-            Please provide a concise summary that synthesizes the key information from all these articles. 
-            Focus on the main points, any contrasting viewpoints, and the most significant developments.
-            Format your response as a JSON object with two fields:
-            1. "headline": A brief, informative headline that captures the main topic
-            2. "summary": A comprehensive yet concise summary of all the articles
-            '''
-            
-            # Get summary from Claude
-            summary = self.summarize_text(prompt)
-            
-            if summary:
-                # Parse the summary
-                try:
-                    if isinstance(summary, str):
-                        summary_dict = json.loads(summary)
-                    else:
-                        summary_dict = summary
-                        
-                    # Add metadata
-                    summary_dict['model'] = 'Claude'
-                    summary_dict['timestamp'] = int(time.time())
-                    
-                    # Get sources
-                    sources = []
-                    for article in cluster:
-                        sources.append({
-                            'title': article.get('title', 'No title'),
-                            'source': article.get('feed_source', 'Unknown Source'),
-                            'link': article.get('link', '#'),
-                            'pub_date': article.get('pub_date', '')
-                        })
-                    summary_dict['sources'] = sources
-                    
-                    return summary_dict
-                except Exception as e:
-                    logging.error(f"Error parsing summary: {str(e)}")
-                    return None
         except Exception as e:
-            logging.error(f"Error generating cluster summary: {str(e)}")
-            return None
+            logger.error(f"Error in process_feeds_with_clustering: {str(e)}")
+            return []
+
+    def _process_cluster(self, cluster):
+        """Process a single cluster and return its HTML content."""
+        if len(cluster) == 1:
+            return self._process_single_article(cluster[0])
+        else:
+            return self._process_multiple_articles(cluster)
+
+    def _generate_html_footer(self):
+        """Generate the HTML footer."""
+        return f'''
+            <div class="footer">
+                <p>Generated on {datetime.now().strftime("%Y-%m-%d %H:%M:%S")} using Claude</p>
+            </div>
+        </body>
+        </html>
+        '''
+
+    def _process_single_article(self, article):
+        """Process a single article and return its HTML content."""
+        summary_dict = article.get('summary', {})
+        
+        if isinstance(summary_dict, str):
+            try:
+                summary_dict = json.loads(summary_dict)
+            except json.JSONDecodeError:
+                summary_dict = {'headline': 'No Headline', 'summary': summary_dict}
+        
+        headline = str(summary_dict.get('headline', article.get('title', 'No headline available')))
+        summary_text = str(summary_dict.get('summary', 'No summary available'))
+        model = str(summary_dict.get('model', 'Unknown'))
+        timestamp = summary_dict.get('timestamp')
+        try:
+            timestamp_int = int(timestamp)
+            timestamp_str = datetime.fromtimestamp(timestamp_int).strftime('%Y-%m-%d %H:%M:%S')
+        except (ValueError, TypeError):
+            timestamp_str = 'Unknown'
+            
+        source = str(article.get('feed_source', 'Unknown Source'))
+        link = str(article.get('link', '#'))
+        
+        return f'''
+        <div class="article">
+            <h2>{html.escape(headline)}</h2>
+            <div class="article-meta">
+                From <a href="{html.escape(link)}" target="_blank">{html.escape(source)}</a>
+            </div>
+            <div class="article-summary">{html.escape(summary_text)}</div>
+            <div class="metadata">
+                Model: {html.escape(model)} | Generated: {html.escape(timestamp_str)}
+            </div>
+        </div>
+        '''
+
+    def _process_multiple_articles(self, cluster):
+        """Process multiple related articles and return their HTML content."""
+        summary = self.generate_cluster_summary(cluster)
+        if not summary:
+            return ''
+            
+        if isinstance(summary, str):
+            try:
+                summary = json.loads(summary)
+            except json.JSONDecodeError:
+                summary = {'headline': 'No Headline', 'summary': summary}
+        
+        headline = str(summary.get('headline', 'Related Articles'))
+        summary_text = str(summary.get('summary', 'No summary available'))
+        model = str(summary.get('model', 'Unknown'))
+        timestamp = summary.get('timestamp')
+        try:
+            timestamp_int = int(timestamp)
+            timestamp_str = datetime.fromtimestamp(timestamp_int).strftime('%Y-%m-%d %H:%M:%S')
+        except (ValueError, TypeError):
+            timestamp_str = 'Unknown'
+        
+        # Get sources from the cluster
+        source_list = []
+        for article in cluster:
+            source_list.append({
+                'title': article.get('title', 'No title'),
+                'source': article.get('feed_source', 'Unknown Source'),
+                'link': article.get('link', '#'),
+                'pub_date': article.get('pub_date', '')
+            })
+        
+        html_content = f'''
+        <div class="article cluster">
+            <h2>{html.escape(headline)}</h2>
+            <div class="article-meta">
+                From multiple sources:
+                <ul class="source-list">
+        '''
+        
+        for source in source_list:
+            html_content += f'''
+                <li>
+                    <a href="{html.escape(source['link'])}" target="_blank">
+                        {html.escape(source['title'])} ({html.escape(source['source'])})
+                    </a>
+                </li>
+            '''
+        
+        html_content += f'''
+                </ul>
+            </div>
+            <div class="article-summary">{html.escape(summary_text)}</div>
+            <div class="metadata">
+                Model: {html.escape(model)} | Generated: {html.escape(timestamp_str)}
+            </div>
+        </div>
+        '''
+        
+        return html_content
+
+    def generate_cluster_summary(self, cluster):
+        """
+        Generate a summary for a cluster of related articles.
+        
+        Args:
+            cluster (list): List of related articles
+            
+        Returns:
+            dict: Summary data including headline, summary text, and metadata
+        """
+        try:
+            # Get the most recent article's title as the main headline
+            main_article = max(cluster, key=lambda x: x.get('published', ''))
+            headline = main_article.get('title', 'No headline available')
+            
+            # Combine summaries from all articles
+            summaries = []
+            for article in cluster:
+                summary_dict = article.get('summary', {})
+                if isinstance(summary_dict, str):
+                    try:
+                        summary_dict = json.loads(summary_dict)
+                    except:
+                        summary_dict = {'summary': summary_dict}
+                
+                if summary_dict and 'summary' in summary_dict:
+                    summaries.append(summary_dict['summary'])
+            
+            combined_text = " ".join(summaries)
+            
+            if not combined_text:
+                return {
+                    'headline': headline,
+                    'summary': "No summary available for this cluster",
+                    'model': 'Fallback',
+                    'timestamp': datetime.now().isoformat()
+                }
+            
+            # Generate a new summary from the combined text
+            try:
+                cluster_summary = self.summarize_text(combined_text, headline)
+                if isinstance(cluster_summary, str):
+                    cluster_summary = {
+                        'headline': headline,
+                        'summary': cluster_summary,
+                        'model': 'Claude',
+                        'timestamp': datetime.now().isoformat()
+                    }
+                return cluster_summary
+            except Exception as e:
+                logging.error(f"Error generating cluster summary: {str(e)}")
+                return {
+                    'headline': headline,
+                    'summary': "Failed to generate cluster summary",
+                    'model': 'Error',
+                    'timestamp': datetime.now().isoformat()
+                }
+                
+        except Exception as e:
+            logging.error(f"Error in generate_cluster_summary: {str(e)}")
+            return {
+                'headline': "Cluster Summary Error",
+                'summary': "Failed to process cluster summary",
+                'model': 'Error',
+                'timestamp': datetime.now().isoformat()
+            }
+
+def test_readwise_token():
+    """Test if Readwise token is properly loaded from .env"""
+    try:
+        client = ReadwiseClient()
+        logging.info("Successfully loaded Readwise token from .env")
+        # Test a simple API call to verify the token works
+        response = requests.get(
+            "https://readwise.io/api/v3/export",
+            headers=client.headers
+        )
+        response.raise_for_status()
+        logging.info("Successfully authenticated with Readwise API")
+        return True
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 401:
+            logging.error("Invalid Readwise token")
+        else:
+            logging.info("Successfully authenticated with Readwise API (token is valid)")
+        return e.response.status_code != 401
+    except Exception as e:
+        logging.error(f"Error testing Readwise token: {e}")
+        return False
 
 def main():
     """
@@ -2515,12 +3306,12 @@ def main():
         
         # Generate HTML output
         logging.info("📝 Generating HTML output...")
-        output_file = 'rss_output.html'
-        reader.generate_html_output(clusters, output_file)
+        output_file = reader.generate_html_output(clusters)
         
-        # Open in browser
-        logging.info(f"✨ Opening {output_file} in browser...")
-        webbrowser.open(output_file)
+        if output_file:
+            # Open in browser
+            logging.info(f"✨ Opening {output_file} in browser...")
+            webbrowser.open(output_file)
         
     except Exception as e:
         logging.error(f"❌ Error in main: {str(e)}")
@@ -2528,4 +3319,8 @@ def main():
         sys.exit(1)
 
 if __name__ == "__main__":
+    # Test Readwise token loading
+    test_readwise_token()
+    
+    # Run main function
     main()
