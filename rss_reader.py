@@ -1506,43 +1506,30 @@ class RSSReader:
             batch = feed_urls[i:i + batch_size]
             logging.info(f"\n🔄 Processing Batch {i//batch_size + 1}/{total_batches}: Feeds {i+1} to {min(i+batch_size, len(feed_urls))}")
             
-            for url in batch:
-                try:
-                    # Parse the feed
-                    parsed_feed = feedparser.parse(url)
-                    if parsed_feed.bozo:
-                        logging.error(f"❌ Error parsing feed {url}: {parsed_feed.bozo_exception}")
-                        continue
+            try:
+                # Process each feed in the batch
+                for url in batch:
+                    try:
+                        # Parse feed
+                        feed = feedparser.parse(url)
+                        
+                        # Process each entry
+                        for entry in feed.entries:
+                            try:
+                                entry = self.process_feed_entry(entry)
+                                entry['feed_source'] = feed.feed.get('title', url)
+                                all_articles.append(entry)
+                            except Exception as e:
+                                logging.error(f"❌ Error processing entry from {url}: {e}")
+                                
+                    except Exception as e:
+                        logging.error(f"❌ Error processing feed {url}: {e}")
+                        
+                if i + batch_size < len(feed_urls):
+                    time.sleep(batch_delay)
                     
-                    logging.info(f"📰 Found {len(parsed_feed.entries)} articles in feed: {url}")
-                    
-                    # Process each entry in the feed
-                    for entry in parsed_feed.entries:
-                        try:
-                            # Get feed title from multiple possible locations
-                            feed_title = (
-                                parsed_feed.feed.get('title') or
-                                parsed_feed.feed.get('subtitle') or
-                                parsed_feed.feed.get('description') or
-                                parsed_feed.feed.get('link') or
-                                self.get_publication_name(url)
-                            )
-                            
-                            # Clean up feed title if it's a URL
-                            if feed_title and (feed_title.startswith('http://') or feed_title.startswith('https://')):
-                                feed_title = self.get_publication_name(feed_title)
-                            
-                            # Add feed source to the entry
-                            entry['feed_source'] = feed_title
-                            all_articles.append(entry)
-                        except Exception as e:
-                            logging.error(f"❌ Error processing entry from {url}: {e}")
-                    
-                except Exception as e:
-                    logging.error(f"❌ Error processing feed {url}: {e}")
-            
-            if i + batch_size < len(feed_urls):
-                time.sleep(batch_delay)
+            except Exception as e:
+                logging.error(f"❌ Error processing batch: {e}")
         
         return all_articles
     
@@ -1812,9 +1799,8 @@ class RSSReader:
                         border-left: 4px solid #3498db;
                     }
                     .article h2 {
-                        color: #2c3e50;
                         margin-top: 0;
-                        margin-bottom: 15px;
+                        color: #2c3e50;
                     }
                     .article-meta {
                         color: #7f8c8d;
@@ -2035,7 +2021,7 @@ Please summarize the following text in this style:
             
             if response and response.content:
                 # Extract just the summary text, removing any "Here's a summary:" prefix
-                summary_text = response.content[0].text
+                summary_text = str(response.content)
                 if "Here's a summary:" in summary_text:
                     summary_text = summary_text.split("Here's a summary:", 1)[1].strip()
                 elif "Here's a concise summary:" in summary_text:
@@ -2172,7 +2158,7 @@ Please summarize the following text in this style:
                 # Add delay between batches if not the last batch
                 if batch_num < total_batches - 1:
                     time.sleep(self.batch_delay)
-            
+                    
             # Log final statistics
             total_time = time.time() - batch_start_time
             logger.info("\n🎉 Processing Complete!")
@@ -2930,41 +2916,58 @@ Return the summary in this JSON format:
                     messages=[{"role": "user", "content": prompt}]
                 )
                 
-                summary_text = response.content[0].text.strip()
+                # Debug logging
+                logging.info(f"Response type: {type(response)}")
+                logging.info(f"Response attributes: {dir(response)}")
+                logging.info(f"Response content: {response.content}")
                 
-                # Try to parse as JSON
+                # Extract summary from response
                 try:
-                    # Remove any potential markdown code block markers
-                    summary_text = summary_text.replace('```json', '').replace('```', '').strip()
-                    summary_dict = json.loads(summary_text)
+                    # Handle response content which may be a list of TextBlocks
+                    if isinstance(response.content, list):
+                        summary_text = response.content[0].text
+                    else:
+                        summary_text = str(response.content)
                     
-                    if isinstance(summary_dict, dict):
-                        # Ensure required fields exist
-                        summary_dict['headline'] = summary_dict.get('headline', title or 'No headline available')
-                        summary_dict['summary'] = summary_dict.get('summary', 'Summary not available')
-                        summary_dict['model'] = self.model
-                        summary_dict['timestamp'] = str(int(time.time()))
-                        
-                        self.cache.set(cache_key, summary_dict)
-                        return summary_dict
-                        
-                except json.JSONDecodeError:
-                    # If JSON parsing fails, create a basic summary
-                    summary_dict = {
+                    # Try to parse as JSON
+                    try:
+                        summary_data = json.loads(summary_text)
+                        return {
+                            'headline': summary_data.get('headline', title or 'No headline available'),
+                            'summary': summary_data.get('summary', "Failed to parse summary"),
+                            'model': self.model,
+                            'timestamp': str(int(time.time()))
+                        }
+                    except json.JSONDecodeError:
+                        # If not valid JSON, use the raw text
+                        # Remove any "Here's a summary:" prefix if present
+                        text = str(summary_text)
+                        if "Here's a summary:" in text:
+                            text = text.split("Here's a summary:", 1)[1].strip()
+                        elif "Here's a concise summary:" in text:
+                            text = text.split("Here's a concise summary:", 1)[1].strip()
+                            
+                        return {
+                            'headline': title or 'No headline available',
+                            'summary': text,
+                            'model': self.model,
+                            'timestamp': str(int(time.time()))
+                        }
+                except Exception as e:
+                    logging.error(f"Failed to extract summary from response: {e}")
+                    return {
                         'headline': title or 'No headline available',
-                        'summary': summary_text,
-                        'model': self.model,
+                        'summary': "Failed to generate summary. Please try again.",
+                        'model': 'Error',
                         'timestamp': str(int(time.time()))
                     }
-                    self.cache.set(cache_key, summary_dict)
-                    return summary_dict
-                    
+                
             except Exception as e:
-                logger.error(f"Error in Claude API call (attempt {attempt + 1}/{max_retries}): {str(e)}")
+                logging.error(f"Error in Claude API call (attempt {attempt + 1}/{max_retries}): {str(e)}")
                 if attempt == max_retries - 1:
                     return {
                         'headline': title or 'No headline available',
-                        'summary': 'Failed to generate summary',
+                        'summary': f"Failed to generate summary: {str(e)}",
                         'model': 'Error',
                         'timestamp': str(int(time.time()))
                     }
@@ -3158,11 +3161,20 @@ Return the summary in this JSON format:
         # Get sources from the cluster
         source_list = []
         for article in cluster:
+            pub_date = ''
+            if 'published_parsed' in article:
+                try:
+                    pub_date = time.strftime('%Y-%m-%d %H:%M:%S', article['published_parsed'])
+                except (TypeError, ValueError):
+                    pass
+            elif 'published' in article:
+                pub_date = str(article['published'])
+                
             source_list.append({
                 'title': article.get('title', 'No title'),
                 'source': article.get('feed_source', 'Unknown Source'),
                 'link': article.get('link', '#'),
-                'pub_date': article.get('pub_date', '')
+                'pub_date': pub_date
             })
         
         html_content = f'''
@@ -3206,60 +3218,109 @@ Return the summary in this JSON format:
         """
         try:
             # Get the most recent article's title as the main headline
-            main_article = max(cluster, key=lambda x: x.get('published', ''))
+            def get_article_date(article):
+                if 'published_parsed' in article and article['published_parsed']:
+                    return article['published_parsed']
+                if 'published' in article:
+                    return article['published']
+                return ''
+            
+            main_article = max(cluster, key=get_article_date)
             headline = main_article.get('title', 'No headline available')
             
-            # Combine summaries from all articles
-            summaries = []
+            # Combine article texts for summarization
+            article_texts = []
             for article in cluster:
-                summary_dict = article.get('summary', {})
-                if isinstance(summary_dict, str):
-                    try:
-                        summary_dict = json.loads(summary_dict)
-                    except:
-                        summary_dict = {'summary': summary_dict}
-                
-                if summary_dict and 'summary' in summary_dict:
-                    summaries.append(summary_dict['summary'])
+                # Extract content from each article
+                content = article.get('content', '')
+                if not content:
+                    content = article.get('summary', '')
+                if not content:
+                    content = article.get('description', '')
+                    
+                if content:
+                    # Clean the content
+                    soup = BeautifulSoup(content, 'html.parser')
+                    text = soup.get_text().strip()
+                    if text:
+                        article_texts.append(text)
             
-            combined_text = " ".join(summaries)
-            
-            if not combined_text:
+            # If no valid texts found, return basic info
+            if not article_texts:
                 return {
                     'headline': headline,
-                    'summary': "No summary available for this cluster",
-                    'model': 'Fallback',
-                    'timestamp': datetime.now().isoformat()
+                    'summary': "No content available to summarize",
+                    'model': 'No content',
+                    'timestamp': int(time.time())
                 }
+                
+            # Combine the texts with newlines
+            combined_text = "\n\n".join(article_texts)
             
-            # Generate a new summary from the combined text
+            # Generate a summary using Claude
+            prompt = f"""Here is a collection of related articles about {headline}. Please provide a comprehensive summary that captures the key points and details from all articles. Focus on facts and avoid speculation. Use clear, concise language.
+
+Articles:
+{combined_text}
+
+Please provide your summary in JSON format with these fields:
+{{"headline": "main headline", "summary": "comprehensive summary"}}"""
+
+            response = self.anthropic.messages.create(
+                model=self.model,
+                max_tokens=150,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            
+            # Debug logging
+            logging.info(f"Response type: {type(response)}")
+            logging.info(f"Response attributes: {dir(response)}")
+            logging.info(f"Response content: {response.content}")
+            
+            # Extract summary from response
             try:
-                cluster_summary = self.summarize_text(combined_text, headline)
-                if isinstance(cluster_summary, str):
-                    cluster_summary = {
-                        'headline': headline,
-                        'summary': cluster_summary,
-                        'model': 'Claude',
-                        'timestamp': datetime.now().isoformat()
+                # Handle response content which may be a list of TextBlocks
+                if isinstance(response.content, list):
+                    summary_text = response.content[0].text
+                else:
+                    summary_text = str(response.content)
+                
+                # Try to parse as JSON
+                try:
+                    summary_data = json.loads(summary_text)
+                    return {
+                        'headline': summary_data.get('headline', headline),
+                        'summary': summary_data.get('summary', "Failed to parse summary"),
+                        'model': self.model,
+                        'timestamp': int(time.time())
                     }
-                return cluster_summary
+                except json.JSONDecodeError:
+                    # If not valid JSON, use the raw text
+                    # Remove any "Here's a summary:" prefix if present
+                    text = str(summary_text)
+                    if "Here's a summary:" in text:
+                        text = text.split("Here's a summary:", 1)[1].strip()
+                    elif "Here's a concise summary:" in text:
+                        text = text.split("Here's a concise summary:", 1)[1].strip()
+                        
+                    return {
+                        'headline': headline,
+                        'summary': text,
+                        'model': self.model,
+                        'timestamp': int(time.time())
+                    }
             except Exception as e:
-                logging.error(f"Error generating cluster summary: {str(e)}")
+                logging.error(f"Failed to extract summary from response: {e}")
                 return {
                     'headline': headline,
-                    'summary': "Failed to generate cluster summary",
+                    'summary': "Failed to generate summary. Please try again.",
                     'model': 'Error',
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': int(time.time())
                 }
                 
         except Exception as e:
-            logging.error(f"Error in generate_cluster_summary: {str(e)}")
-            return {
-                'headline': "Cluster Summary Error",
-                'summary': "Failed to process cluster summary",
-                'model': 'Error',
-                'timestamp': datetime.now().isoformat()
-            }
+            logging.error(f"Error in generate_cluster_summary: {e}")
+            return None
 
 def test_readwise_token():
     """Test if Readwise token is properly loaded from .env"""
