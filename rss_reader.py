@@ -1,5 +1,19 @@
 """
 RSS Reader with AI-Powered Summarization and Article Clustering
+
+A sophisticated RSS feed reader that combines AI-powered summarization using Claude 3,
+efficient caching, and intelligent article clustering. Key features include:
+
+- Claude 3 Haiku integration for high-quality article summarization
+- Efficient caching system for feeds and summaries
+- Semantic clustering of related articles using SentenceTransformer
+- Export capabilities (HTML, PDF, Email)
+- Readwise integration for saving articles
+- Advanced content filtering (sponsored content, crypto)
+- Smart rate limiting and batch processing
+- Comprehensive logging and performance tracking
+
+Updated: 2024-01-02
 """
 
 import os
