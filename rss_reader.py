@@ -15,22 +15,33 @@ The script is structured into several main components:
 - Performance tracking decorators for monitoring and optimization
 """
 
-import functools
+import os
+import re
+import json
 import time
 import logging
-import os
-import json
+import hashlib
+import requests
+import traceback
+import html
 from typing import Callable, Any
 import datetime
 import pytz
-from dateutil import parser
-from sentence_transformers import SentenceTransformer
-import numpy as np
-from sklearn.metrics.pairwise import cosine_similarity
+import functools
+import feedparser
+import html2text
+import sys
 import newspaper
 from newspaper import Article, Config
 import webbrowser
-import traceback
+from bs4 import BeautifulSoup
+from email.utils import parsedate_to_datetime
+from datetime import datetime, timedelta
+from sentence_transformers import SentenceTransformer
+from sklearn.metrics.pairwise import cosine_similarity
+import numpy as np
+import anthropic
+from tqdm import tqdm
 
 def track_performance(log_level=logging.INFO, log_to_file=True):
     """
@@ -998,47 +1009,28 @@ class RSSReader:
                     # Single article - display as before
                     article = cluster[0]
                     summary_dict = article.get('summary', {})
-                    if isinstance(summary_dict, dict) and 'summary' in summary_dict:
-                        summary_data = summary_dict['summary']
-                    else:
-                        summary_data = summary_dict
                     
-                    if isinstance(summary_data, str):
+                    if isinstance(summary_dict, str):
                         try:
-                            summary_data = json.loads(summary_data)
+                            summary_dict = json.loads(summary_dict)
                         except:
-                            summary_data = {'headline': 'No Headline', 'summary': summary_data}
+                            summary_dict = {'headline': 'No Headline', 'summary': summary_dict}
                     
-                    summary_text = summary_data.get('summary', 'No summary available')
-                    headline = summary_data.get('headline', article.get('title', 'No headline available'))
-                    model = summary_data.get('model', 'Unknown')
-                    timestamp = summary_data.get('timestamp')
+                    headline = summary_dict.get('headline', article.get('title', 'No headline available'))
+                    summary_text = summary_dict.get('summary', 'No summary available')
+                    model = summary_dict.get('model', 'Unknown')
+                    timestamp = summary_dict.get('timestamp')
                     timestamp_str = datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S') if timestamp else 'Unknown'
                     
                     html_content += f'''
                     <div class="article">
-                        <h2>{article.get('title', 'No title available')}</h2>
+                        <h2>{html.escape(headline)}</h2>
                         <div class="article-meta">
-                            <span>Published: {article.get('published', 'No date available')}</span>
+                            From <a href="{html.escape(str(article.get('link', '#')))}" target="_blank">{html.escape(str(article.get('feed_source', 'Unknown Source')))}</a>
                         </div>
-                        
-                        <div class="article-summary">
-                            <div class="summary-header">
-                                <strong>Headline:</strong> {headline}
-                            </div>
-                            <div class="summary-content">
-                                {summary_text}
-                            </div>
-                            <div class="summary-footer">
-                                <span class="model-info">Model: {model}</span>
-                                <span class="timestamp-info">Generated: {timestamp_str}</span>
-                            </div>
-                        </div>
-                        
-                        <div class="article-footer">
-                            <a href="{article.get('link', '#')}" class="article-link" target="_blank">
-                                Read original article: {article.get('title', 'No title available')} ({article.get('source', 'Unknown source')})
-                            </a>
+                        <div class="article-summary">{html.escape(summary_text)}</div>
+                        <div class="metadata">
+                            Model: {html.escape(model)} | Generated: {html.escape(timestamp_str)}
                         </div>
                     </div>
                     '''
@@ -1052,46 +1044,44 @@ class RSSReader:
                             except:
                                 summary = {'headline': 'No Headline', 'summary': summary}
                         
-                        summary_text = summary.get('summary', 'No summary available')
                         headline = summary.get('headline', 'Related Articles')
+                        summary_text = summary.get('summary', 'No summary available')
                         model = summary.get('model', 'Unknown')
                         timestamp = summary.get('timestamp')
                         timestamp_str = datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S') if timestamp else 'Unknown'
-                        sources = summary.get('sources', [])
+                        
+                        # Get sources from the cluster
+                        source_list = []
+                        for article in cluster:
+                            source_list.append({
+                                'title': article.get('title', 'No title'),
+                                'link': article.get('link', '#'),
+                                'source': article.get('feed_source', 'Unknown Source')
+                            })
                         
                         html_content += f'''
                         <div class="article cluster">
-                            <h2>Related Articles</h2>
-                            
-                            <div class="article-summary">
-                                <div class="summary-header">
-                                    <strong>Headline:</strong> {headline}
-                                </div>
-                                <div class="summary-content">
-                                    {summary_text}
-                                </div>
-                                <div class="summary-footer">
-                                    <span class="model-info">Model: {model}</span>
-                                    <span class="timestamp-info">Generated: {timestamp_str}</span>
-                                </div>
-                            </div>
-                            
-                            <div class="article-sources">
-                                <h3>Sources:</h3>
+                            <h2>{html.escape(headline)}</h2>
+                            <div class="article-meta">
+                                From multiple sources:
                                 <ul class="source-list">
                         '''
                         
-                        for source in sources:
+                        for source in source_list:
                             html_content += f'''
-                                    <li>
-                                        <a href="{source['link']}" class="article-link" target="_blank">
-                                            {source['title']} ({source['source']})
-                                        </a>
-                                    </li>
+                                <li>
+                                    <a href="{html.escape(source['link'])}" target="_blank">
+                                        {html.escape(source['title'])} ({html.escape(source['source'])})
+                                    </a>
+                                </li>
                             '''
                         
-                        html_content += '''
+                        html_content += f'''
                                 </ul>
+                            </div>
+                            <div class="article-summary">{html.escape(summary_text)}</div>
+                            <div class="metadata">
+                                Model: {html.escape(model)} | Generated: {html.escape(str(timestamp_str))}
                             </div>
                         </div>
                         '''
@@ -2027,50 +2017,38 @@ Please summarize the following text in this style:
             logger.error(f"Error extracting article content: {str(e)}")
             return None, None
 
-    def summarize_text(self, text, original_title=None):
+    def summarize_text(self, text, max_retries=3):
         """
-        Generate an AI-powered summary of the given text.
-        
-        Uses Claude API to create a concise, informative summary that captures
-        the key points of the article. The summary includes:
-        - A headline that captures the main point
-        - 3-5 sentences of summary content
-        - Model and timestamp information
+        Generate a summary of the given text using Claude API.
         
         Args:
-            text (str): The article text to summarize
-            original_title (str, optional): The original article title for context
-        
+            text (str): The text to summarize
+            max_retries (int): Maximum number of retries for API calls
+            
         Returns:
-            Dict: Summary data including the summary text, headline, and metadata
+            Dict: Summary data including the summary text and metadata
         """
         if not text:
             return None
             
-        try:
-            # Check cache first
-            cache_key = hashlib.md5(text.encode()).hexdigest()
-            cached = self.cache.get(cache_key)
-            if cached:
-                return cached
+        # Generate cache key
+        cache_key = f"summary_{hashlib.md5(text.encode()).hexdigest()}"
+        
+        # Check cache first
+        cached_summary = self.cache.get(cache_key)
+        if cached_summary:
+            return cached_summary
             
-            # Prepare Claude API prompt with more robust error checking
-            prompt = f"""You are an expert at creating concise, informative summaries of articles. Your summaries are objective, factual, and capture key points in 3-5 clear sentences. Start directly with the summary content - do not include phrases like 'Here is a summary' or 'In summary'. 
-
-            {f'Context: Article titled "{original_title}"' if original_title else ''}
-            
-            Text to summarize:
-            {text}
-            """
-            
+        # Retry loop for API calls
+        for attempt in range(max_retries):
             try:
                 # Make Claude API call with detailed error handling
                 response = self.anthropic.messages.create(
                     model=self.model,
                     max_tokens=1024,
-                    system="You are an expert at creating concise, informative summaries of articles. Your summaries are objective, factual, and capture key points in 3-5 clear sentences. Start directly with the summary content - do not include phrases like 'Here is a summary' or 'In summary'.",
+                    system="You are an expert at creating concise, informative summaries. Your summaries are objective, factual, and capture key points in 3-5 clear sentences. For multiple articles, provide a JSON response with 'headline' and 'summary' fields. For single articles, provide a direct summary.",
                     messages=[
-                        {"role": "user", "content": prompt}
+                        {"role": "user", "content": text}
                     ]
                 )
                 
@@ -2106,11 +2084,21 @@ Please summarize the following text in this style:
                     logging.error("Empty summary text")
                     return None
                 
-                # Extract headline from first sentence if possible
+                # Try to parse as JSON for cluster summaries
+                try:
+                    summary_dict = json.loads(summary_text)
+                    if isinstance(summary_dict, dict) and 'headline' in summary_dict and 'summary' in summary_dict:
+                        summary_dict['model'] = self.model
+                        summary_dict['timestamp'] = time.time()
+                        self.cache.set(cache_key, summary_dict)
+                        return summary_dict
+                except:
+                    pass
+                
+                # If not JSON or parsing failed, treat as single article summary
                 sentences = summary_text.split('.')
                 headline = sentences[0].strip()
                 
-                # Create summary dictionary
                 summary = {
                     'summary': summary_text,
                     'headline': headline,
@@ -2120,16 +2108,13 @@ Please summarize the following text in this style:
                 
                 # Cache the summary
                 self.cache.set(cache_key, summary)
-                
                 return summary
                 
             except Exception as e:
-                logging.error(f"Error in Claude API call: {str(e)}")
-                return None
-                
-        except Exception as e:
-            logging.error(f"Error in summarize_text: {str(e)}")
-            return None
+                logging.error(f"Error in Claude API call (attempt {attempt + 1}/{max_retries}): {str(e)}")
+                if attempt == max_retries - 1:
+                    return None
+                time.sleep(1)  # Wait before retrying
     
     @track_performance()
     def cluster_similar_articles(self, articles, similarity_threshold=0.5, max_clusters=10):
@@ -2239,7 +2224,12 @@ Please summarize the following text in this style:
                         max-width: 1200px;
                         margin: 0 auto;
                         padding: 20px;
-                        background: #f5f5f5;
+                        background-color: #f5f5f5;
+                    }
+                    h1 {
+                        color: #333;
+                        border-bottom: 2px solid #ddd;
+                        padding-bottom: 10px;
                     }
                     .cluster {
                         background: white;
@@ -2319,11 +2309,13 @@ Please summarize the following text in this style:
                         except:
                             summary_dict = {'headline': 'No Headline', 'summary': summary_dict}
                     
-                    headline = summary_dict.get('headline', article.get('title', 'No headline available'))
-                    summary_text = summary_dict.get('summary', 'No summary available')
-                    model = summary_dict.get('model', 'Unknown')
+                    headline = str(summary_dict.get('headline', article.get('title', 'No headline available')))
+                    summary_text = str(summary_dict.get('summary', 'No summary available'))
+                    model = str(summary_dict.get('model', 'Unknown'))
                     timestamp = summary_dict.get('timestamp')
                     timestamp_str = datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S') if timestamp else 'Unknown'
+                    source = str(article.get('feed_source', 'Unknown Source'))
+                    link = str(article.get('link', '#'))
                     
                     html_content += f'''
                     <div class="cluster">
@@ -2335,8 +2327,8 @@ Please summarize the following text in this style:
                             <h3>Source:</h3>
                             <div class="source-list">
                                 <div class="source-item">
-                                    <a href="{html.escape(article['link'])}" class="source-title" target="_blank">
-                                        {html.escape(article.get('source_name', 'Unknown Source'))}
+                                    <a href="{html.escape(link)}" class="source-title" target="_blank">
+                                        {html.escape(source)}
                                     </a>
                                     <div class="source-info">
                                         Published: {html.escape(article.get('published', 'Unknown'))}
@@ -2359,41 +2351,46 @@ Please summarize the following text in this style:
                             except:
                                 summary = {'headline': 'No Headline', 'summary': summary}
                         
-                        headline = summary.get('headline', 'Related Articles')
-                        summary_text = summary.get('summary', 'No summary available')
-                        model = summary.get('model', 'Unknown')
+                        headline = str(summary.get('headline', 'Related Articles'))
+                        summary_text = str(summary.get('summary', 'No summary available'))
+                        model = str(summary.get('model', 'Unknown'))
                         timestamp = summary.get('timestamp')
                         timestamp_str = datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S') if timestamp else 'Unknown'
                         
+                        # Get sources from the cluster
+                        source_list = []
+                        for article in cluster:
+                            source_list.append({
+                                'title': str(article.get('title', 'No title')),
+                                'source': str(article.get('feed_source', 'Unknown Source')),
+                                'link': str(article.get('link', '#')),
+                                'pub_date': str(article.get('pub_date', ''))
+                            })
+                        summary_dict['sources'] = source_list
+                        
                         html_content += f'''
-                        <div class="cluster">
-                            <div class="cluster-header">
-                                <h2 class="cluster-title">{html.escape(headline)}</h2>
-                                <div class="cluster-summary">{html.escape(summary_text)}</div>
-                            </div>
-                            <div class="sources">
-                                <h3>Sources:</h3>
-                                <div class="source-list">
+                        <div class="article cluster">
+                            <h2>{html.escape(headline)}</h2>
+                            <div class="article-meta">
+                                From multiple sources:
+                                <ul class="source-list">
                         '''
                         
-                        # Add each source
-                        for article in cluster:
+                        for source in source_list:
                             html_content += f'''
-                                <div class="source-item">
-                                    <a href="{html.escape(article['link'])}" class="source-title" target="_blank">
-                                        {html.escape(article.get('source_name', 'Unknown Source'))}
+                                <li>
+                                    <a href="{html.escape(source['link'])}" target="_blank">
+                                        {html.escape(source['title'])} ({html.escape(source['source'])})
                                     </a>
-                                    <div class="source-info">
-                                        Published: {html.escape(article.get('published', 'Unknown'))}
-                                    </div>
-                                </div>
+                                </li>
                             '''
                         
                         html_content += f'''
-                                </div>
+                                </ul>
                             </div>
+                            <div class="article-summary">{html.escape(summary_text)}</div>
                             <div class="metadata">
-                                Model: {html.escape(model)} | Generated: {html.escape(timestamp_str)}
+                                Model: {html.escape(model)} | Generated: {html.escape(str(timestamp_str))}
                             </div>
                         </div>
                         '''
@@ -2416,42 +2413,68 @@ Please summarize the following text in this style:
             
     def generate_cluster_summary(self, cluster):
         """
-        Generate a combined summary for a cluster of similar articles.
+        Generate a summary for a cluster of similar articles.
         
         Args:
             cluster (List[Dict]): List of similar articles to summarize together
             
         Returns:
-            Dict: Combined summary including headline, summary text, and sources
+            Dict: Summary data including the summary text, headline, and metadata
         """
-        if not cluster:
-            return None
-            
         try:
-            # Combine all article texts
-            combined_text = ""
+            # Extract titles and content for summarization
+            titles = []
+            contents = []
             for article in cluster:
-                title = article.get('title', '')
-                content = article.get('content', '')
-                if content:
-                    combined_text += f"{title}\n{content}\n\n"
+                titles.append(article.get('title', ''))
+                contents.append(article.get('content', ''))
             
-            # Generate a new summary for the combined text
-            if combined_text:
-                summary = self.summarize_text(combined_text)
-                if summary:
-                    # Add the list of sources to the summary
+            # Create prompt for the model
+            prompt = f'''Here are {len(titles)} related articles:
+
+            Titles:
+            {chr(10).join(f"- {title}" for title in titles)}
+            
+            Contents:
+            {chr(10).join(contents)}
+            
+            Please provide a concise summary that synthesizes the key information from all these articles. 
+            Focus on the main points, any contrasting viewpoints, and the most significant developments.
+            Format your response as a JSON object with two fields:
+            1. "headline": A brief, informative headline that captures the main topic
+            2. "summary": A comprehensive yet concise summary of all the articles
+            '''
+            
+            # Get summary from Claude
+            summary = self.summarize_text(prompt)
+            
+            if summary:
+                # Parse the summary
+                try:
+                    if isinstance(summary, str):
+                        summary_dict = json.loads(summary)
+                    else:
+                        summary_dict = summary
+                        
+                    # Add metadata
+                    summary_dict['model'] = 'Claude'
+                    summary_dict['timestamp'] = int(time.time())
+                    
+                    # Get sources
                     sources = []
                     for article in cluster:
                         sources.append({
                             'title': article.get('title', 'No title'),
-                            'source': article.get('source', article.get('feed_source', 'Unknown source')),
+                            'source': article.get('feed_source', 'Unknown Source'),
                             'link': article.get('link', '#'),
                             'pub_date': article.get('pub_date', '')
                         })
-                    summary['sources'] = sources
-                    return summary
+                    summary_dict['sources'] = sources
                     
+                    return summary_dict
+                except Exception as e:
+                    logging.error(f"Error parsing summary: {str(e)}")
+                    return None
         except Exception as e:
             logging.error(f"Error generating cluster summary: {str(e)}")
             return None
