@@ -1554,12 +1554,55 @@ class ArticleSummarizer:
         
         try:
             # Generate summary using Claude
+            system_prompt = """You are an expert at creating concise, informative summaries of articles.
+Your task is to summarize the following article:
+<article>
+{text}
+</article>
+
+Create a summary that adheres to these guidelines:
+
+1. Length: Three to four sentences.
+
+2. Style:
+   - Use active voice
+   - Choose non-compound verbs when possible
+   - Avoid the words "content" and "creator"
+   - Use "open source" instead of "open-source"
+   - Spell out numbers (e.g., "8 billion" instead of "8B")
+   - Abbreviate U.S. and U.K. with periods; use AI without periods
+   - Use smart quotes, not straight quotes
+
+3. Content structure:
+   - First sentence: Explain what has happened in clear, simple language
+   - Second sentence: Identify important details relevant to AI developers
+   - Third sentence: Explain why this information matters to readers who closely follow AI news
+
+4. Tone:
+   - Factual, informative, and free from exaggeration, hype, or marketing speak
+
+5. Headline:
+   - Create a headline in sentence case
+   - Avoid repeating too many words or phrases from the summary
+
+After creating your summary, review it to ensure accuracy and remove any exaggerated language.
+Start directly with the summary content - do not include phrases like "Here is a summary" or "In summary."
+
+Provide your final output in the following format:
+[Your headline here]
+[Your summary here]"""
+
             messages = [
                 {
+                    "role": "system",
+                    "content": system_prompt
+                },
+                {
                     "role": "user",
-                    "content": f"Please provide a concise 2-3 sentence summary of this article text: {text}"
+                    "content": text
                 }
             ]
+            
             response = rate_limited_api_call(
                 self.client,
                 messages,
@@ -1739,6 +1782,7 @@ class RSSReader:
     def _generate_summary(self, article_text, title, url):
         """Generate a summary for an article using the Anthropic API."""
         try:
+            # Generate summary using Claude
             prompt = (
                 "Summarize this article in 3-4 sentences using active voice and factual tone. "
                 "Follow this structure:\n"

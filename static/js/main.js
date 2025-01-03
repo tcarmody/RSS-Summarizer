@@ -30,10 +30,20 @@ document.addEventListener('DOMContentLoaded', function() {
         .then(response => response.json())
         .then(data => {
             if (data.status === 'success') {
-                showAlert('success', data.message);
+                const alertDiv = document.createElement('div');
+                alertDiv.className = 'alert alert-success alert-dismissible fade show';
+                alertDiv.innerHTML = `
+                    ${data.message}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                `;
+                document.querySelector('.container').insertBefore(alertDiv, document.querySelector('.row'));
+                setTimeout(() => alertDiv.remove(), 10000);
             } else {
                 showAlert('danger', data.message);
             }
+        })
+        .catch(error => {
+            showAlert('danger', 'Export failed: ' + error.message);
         });
     });
 

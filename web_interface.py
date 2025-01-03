@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, redirect, url_for, flash
+from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, send_from_directory
 from rss_reader import FavoritesManager, ExportManager, TagGenerator, RSSReaderConfig, ArticleSummarizer
 import os
 from werkzeug.utils import secure_filename
@@ -148,22 +148,45 @@ def export():
     include_summary = request.form.get('include_summary', 'true') == 'true'
     
     try:
-        output_file = f'output/exported_articles.{format}'
+        # Create output directory if it doesn't exist
+        output_dir = os.path.join(os.path.dirname(__file__), 'output')
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Generate output filename
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f'articles_{timestamp}.{format}'
+        output_file = os.path.join(output_dir, filename)
+        
+        # Export the articles
         favorites_manager.export_favorites(
             output_file=output_file,
             format=format,
             tag=tag,
             include_summary=include_summary
         )
-        return jsonify({
-            'status': 'success',
-            'message': f'Articles exported successfully to {output_file}'
-        })
+        
+        # For HTML format, we can serve the file directly
+        if format == 'html':
+            return jsonify({
+                'status': 'success',
+                'message': f'Articles exported successfully! <a href="/output/{filename}" target="_blank">View Export</a>'
+            })
+        else:
+            return jsonify({
+                'status': 'success',
+                'message': f'Articles exported successfully to {filename}'
+            })
     except Exception as e:
+        logging.error(f"Export error: {str(e)}")
         return jsonify({
             'status': 'error',
-            'message': str(e)
+            'message': f'Export failed: {str(e)}'
         })
+
+@app.route('/output/<path:filename>')
+def serve_export(filename):
+    output_dir = os.path.join(os.path.dirname(__file__), 'output')
+    return send_from_directory(output_dir, filename)
 
 @app.route('/search')
 def search():
