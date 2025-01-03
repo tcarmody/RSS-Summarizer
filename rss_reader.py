@@ -1,3 +1,143 @@
+import os
+import sys
+import time
+import json
+import logging
+import feedparser
+import psutil
+import anthropic
+import requests
+import traceback
+import html
+import re
+from datetime import datetime
+from functools import wraps
+from bs4 import BeautifulSoup
+from sentence_transformers import SentenceTransformer
+from sklearn.metrics.pairwise import cosine_similarity
+from tqdm import tqdm
+from dotenv import load_dotenv
+from urllib.parse import urlparse
+from sklearn.cluster import DBSCAN
+import concurrent.futures
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.retry import Retry
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from ratelimit import limits, sleep_and_retry
+import asyncio
+from typing import List, Dict, Any, Optional
+
+# Load environment variables from .env file
+env_path = os.path.expanduser('~/workspace/.env')
+load_dotenv(env_path)
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s: %(message)s'
+)
+
+def create_session():
+    """Create a requests session with retry strategy"""
+    session = requests.Session()
+    retry_strategy = Retry(
+        total=3,
+        backoff_factor=1,
+        status_forcelist=[429, 500, 502, 503, 504],
+    )
+    adapter = HTTPAdapter(max_retries=retry_strategy, pool_connections=10, pool_maxsize=10)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    return session
+
+def performance_logger(func):
+    """Decorator to log performance metrics of functions."""
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        start_time = time.time()
+        cpu_start = time.process_time()
+        mem_start = psutil.Process().memory_info().rss
+        
+        result = func(*args, **kwargs)
+        
+        elapsed = time.time() - start_time
+        cpu_percent = (time.process_time() - cpu_start) / elapsed * 100
+        mem_used = psutil.Process().memory_info().rss - mem_start
+        
+        logging.info(f"Performance: {func.__name__} took {elapsed:.4f} seconds (CPU: {cpu_percent:.1f}%, Memory: {mem_used} bytes)")
+        
+        return result
+    return wrapper
+
+# Rate limit for Anthropic API (5 requests per second)
+CALLS_PER_SECOND = 5
+ANTHROPIC_RATE_LIMIT = limits(calls=CALLS_PER_SECOND, period=1)
+
+@sleep_and_retry
+@ANTHROPIC_RATE_LIMIT
+def rate_limited_api_call(client: anthropic.Anthropic, messages: List[Dict[str, str]], **kwargs) -> Any:
+    """Make a rate-limited call to the Anthropic API"""
+    return client.messages.create(
+        messages=messages,
+        **kwargs
+    )
+
+class BatchProcessor:
+    """Process items in batches with rate limiting."""
+    
+    def __init__(self, batch_size=5, requests_per_second=5):
+        self.batch_size = batch_size
+        self.delay = 1.0 / requests_per_second  # Time between requests
+        self.queue = []
+        self.results = []
+        self.last_request_time = 0
+    
+    def add(self, item):
+        """Add an item to the processing queue."""
+        self.queue.append(item)
+        if len(self.queue) >= self.batch_size:
+            self._process_batch()
+    
+    def _process_batch(self):
+        """Process a batch of items with rate limiting."""
+        if not self.queue:
+            return
+        
+        with ThreadPoolExecutor(max_workers=self.batch_size) as executor:
+            futures = []
+            for item in self.queue[:self.batch_size]:
+                # Ensure rate limiting
+                now = time.time()
+                time_since_last = now - self.last_request_time
+                if time_since_last < self.delay:
+                    time.sleep(self.delay - time_since_last)
+                
+                future = executor.submit(
+                    item['func'],
+                    *item['args'],
+                    **item['kwargs']
+                )
+                futures.append(future)
+                self.last_request_time = time.time()
+            
+            # Wait for all futures to complete
+            for future in futures:
+                try:
+                    result = future.result()
+                    if result:
+                        self.results.append(result)
+                except Exception as e:
+                    logging.error(f"Error in batch processing: {str(e)}")
+        
+        # Remove processed items
+        self.queue = self.queue[self.batch_size:]
+    
+    def get_results(self):
+        """Process remaining items and return all results."""
+        while self.queue:
+            self._process_batch()
+        return self.results
+
 """
 RSS Reader with AI-Powered Summarization and Article Clustering
 
@@ -20,7 +160,9 @@ import os
 import re
 import json
 import time
+import math
 import logging
+import psutil
 import hashlib
 import requests
 import traceback
@@ -41,10 +183,17 @@ from datetime import datetime, timedelta
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
-from anthropic import Anthropic
 from tqdm import tqdm
 from dotenv import load_dotenv
 from urllib.parse import urlparse
+from sklearn.cluster import DBSCAN  # Import DBSCAN for clustering
+import concurrent.futures
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.retry import Retry
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from ratelimit import limits, sleep_and_retry
+import asyncio
+from typing import List, Dict, Any, Optional
 
 # Load environment variables from .env file
 env_path = os.path.expanduser('~/workspace/.env')
@@ -103,7 +252,6 @@ def track_performance(log_level=logging.INFO, log_to_file=True):
             
             # Track CPU and memory usage
             try:
-                import psutil
                 process = psutil.Process(start_memory)
                 start_cpu_percent = process.cpu_percent()
                 start_memory_info = process.memory_info()
@@ -304,10 +452,7 @@ class SummaryCache:
         self._load_cache()
     
     def _load_cache(self):
-        """
-        Load the cache from disk, creating an empty one if it doesn't exist.
-        Also performs cache cleanup by removing expired entries.
-        """
+        """Load the cache from disk, creating an empty one if it doesn't exist."""
         try:
             if os.path.exists(self.cache_file):
                 with open(self.cache_file, 'r') as f:
@@ -321,21 +466,16 @@ class SummaryCache:
             self.cache = {}
     
     def _save_cache(self):
-        """
-        Save the current cache to disk in JSON format.
-        Implements basic error handling to prevent data loss.
-        """
+        """Save the current cache to disk in JSON format."""
         try:
             with open(self.cache_file, 'w') as f:
-                json.dump(self.cache, f)
+                self.cache['last_updated'] = datetime.now().isoformat()
+                json.dump(self.cache, f, indent=2)
         except Exception as e:
             logging.error(f"Error saving cache: {e}")
     
     def _cleanup_cache(self):
-        """
-        Remove expired entries and enforce maximum cache size.
-        Uses LRU (Least Recently Used) strategy when cache exceeds max size.
-        """
+        """Remove expired entries and enforce maximum cache size."""
         current_time = time.time()
         # Remove expired entries
         self.cache = {
@@ -352,15 +492,7 @@ class SummaryCache:
             self.cache = dict(sorted_items[-self.max_cache_size:])
     
     def get(self, key: str) -> Optional[Dict]:
-        """
-        Retrieve a summary from the cache.
-        
-        Args:
-            key (str): Cache key (usually URL or content hash)
-        
-        Returns:
-            Optional[Dict]: Cached summary if found and not expired, None otherwise
-        """
+        """Retrieve a summary from the cache."""
         if key in self.cache:
             entry = self.cache[key]
             if time.time() - entry.get('timestamp', 0) < self.cache_duration:
@@ -370,13 +502,7 @@ class SummaryCache:
         return None
     
     def set(self, key: str, value: Dict):
-        """
-        Store a summary in the cache.
-        
-        Args:
-            key (str): Cache key (usually URL or content hash)
-            value (Dict): Summary data to cache
-        """
+        """Store a summary in the cache."""
         value['timestamp'] = time.time()
         self.cache[key] = value
         if len(self.cache) > self.max_cache_size:
@@ -384,15 +510,7 @@ class SummaryCache:
         self._save_cache()
     
     def _hash_text(self, text):
-        """
-        Generate a hash for the given text to use as a cache key.
-        
-        Args:
-            text (str or set): Text to hash
-        
-        Returns:
-            str: Hashed text
-        """
+        """Generate a hash for the given text to use as a cache key."""
         import hashlib
         # Convert text to string if it's not already
         if isinstance(text, (set, list, tuple)):
@@ -403,13 +521,7 @@ class SummaryCache:
         return hashlib.md5(text.encode('utf-8')).hexdigest()
     
     def get(self, text, force_refresh=False):
-        """
-        Retrieve cached summary for a given text.
-        
-        :param text: Original text to summarize
-        :param force_refresh: If True, ignore cached version
-        :return: Cached summary or None if not found/expired
-        """
+        """Retrieve cached summary for a given text."""
         if force_refresh:
             return None
         
@@ -438,13 +550,7 @@ class SummaryCache:
         return None
     
     def set(self, text, summary, force_update=False):
-        """
-        Cache a summary for a given text.
-        
-        :param text: Original text
-        :param summary: Summary dictionary
-        :param force_update: If True, update even if entry exists
-        """
+        """Cache a summary for a given text."""
         # Convert text to string if it's not already
         if isinstance(text, (set, list, tuple)):
             text = ' '.join(sorted(str(item) for item in text))
@@ -460,9 +566,7 @@ class SummaryCache:
             self._save_cache()
     
     def clear_cache(self):
-        """
-        Completely clear the cache.
-        """
+        """Completely clear the cache."""
         self.cache.clear()
         try:
             os.remove(self.cache_file)
@@ -564,10 +668,6 @@ class ArticleFilter:
             r'(?i)(?:hodl|to the moon)',
             r'(?i)(?:satoshi|nakamoto)'
         ]
-        
-        # Compile all patterns for better performance
-        self.sponsored_regex = re.compile('|'.join(self.sponsored_patterns))
-        self.crypto_regex = re.compile('|'.join(self.crypto_patterns))
         
         # Threshold for crypto content (percentage of content that can be crypto-related)
         self.crypto_threshold = 0.15  # 15% threshold
@@ -1137,7 +1237,7 @@ class ExportManager:
                 body {
                     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
                     line-height: 1.6;
-                    max-width: 800px;
+                    max-width: 1200px;
                     margin: 0 auto;
                     padding: 20px;
                     color: #333;
@@ -1239,15 +1339,44 @@ class ExportManager:
                 }
             }
         '''
+        
+        self.summary_css = '''
+            .summary-box {
+                background: #f8f8f8;
+                border-left: 4px solid #0066cc;
+                padding: 16px 20px;
+                margin: 16px 0;
+                border-radius: 0 8px 8px 0;
+            }
+            .summary-box h3 {
+                margin: 0 0 8px 0;
+                color: #0066cc;
+                font-size: 18px;
+                font-weight: 500;
+            }
+            .summary-box p {
+                margin: 0;
+                color: #333;
+                line-height: 1.6;
+                font-size: 16px;
+            }
+            .model-info {
+                font-style: italic;
+                color: #666;
+                font-size: 14px;
+                margin-top: 12px;
+                border-top: 1px solid #e5e5e5;
+                padding-top: 12px;
+            }
+        '''
     
     def format_article_html(self, article, include_summary=True, for_email=False):
         """Format a single article as HTML."""
         template = '''
-        <div class="{article_class}">
+        <div class="article">
             <h2><a href="{link}" target="_blank">{title}</a></h2>
             <div class="{meta_class}">
-                Published: {pub_date}
-                {added_date}
+                Published on {pub_date} by <a href="{link}" target="_blank">{source}</a>
             </div>
             {summary}
             {notes}
@@ -1287,20 +1416,35 @@ class ExportManager:
         # Format summary
         summary_html = ''
         if include_summary and article.get('summary'):
-            summary_html = f'<p>{article["summary"]}</p>'
+            if isinstance(article['summary'], dict):
+                headline = article['summary'].get('headline', '')
+                summary = article['summary'].get('summary', '')
+            else:
+                headline = ''
+                summary = article['summary']
+            
+            summary_html = f'''
+            <div class="summary-box">
+                <h3>{headline}</h3>
+                <p>{summary}</p>
+                <div class="model-info">
+                    Model: {self.model} | Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+                </div>
+            </div>
+            '''
         
         # Format dates
-        added_date = ''
-        if article.get('added_date'):
-            added_date = f' | Added: {article["added_date"]}'
+        pub_date = ''
+        if article.get('pub_date'):
+            pub_date = article['pub_date']
         
         return template.format(
             article_class=article_class,
             meta_class=meta_class,
             link=article['link'],
             title=article['title'],
-            pub_date=article.get('pub_date', 'Unknown'),
-            added_date=added_date,
+            pub_date=pub_date,
+            source=article.get('source', 'Unknown Source'),
             summary=summary_html,
             notes=notes_html,
             tags=tags_html
@@ -1357,6 +1501,7 @@ class ExportManager:
             output_file,
             stylesheets=[
                 CSS(string=self.pdf_css),
+                CSS(string=self.summary_css),
                 CSS(string='@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap");'),
             ],
             font_config=font_config
@@ -1433,1893 +1578,391 @@ class RSSReader:
     API calls and includes fallback options for summarization.
     """
     
-    def __init__(self, api_key=None, cache_dir='.cache'):
-        """
-        Initialize the RSS reader with API credentials and caching.
+    def __init__(self, feeds=None, batch_size=25, batch_delay=15):
+        """Initialize RSSReader with feeds and settings."""
+        self.feeds = feeds or self._load_default_feeds()
+        self.batch_size = batch_size
+        self.batch_delay = batch_delay
+        self.session = create_session()
+        self.client = anthropic.Anthropic()
+        self.batch_processor = BatchProcessor(batch_size=5)  # Process 5 API calls at a time
         
-        Args:
-            api_key (str): Anthropic API key for Claude
-            cache_dir (str): Directory for caching summaries and feed data
-        """
-        self.anthropic = Anthropic(api_key=api_key or get_env_var('ANTHROPIC_API_KEY'))
-        self.model = "claude-3-haiku-20240307"
-        self.cache = SummaryCache(cache_dir=cache_dir)
-        self._sentence_transformer = None  # Lazy-loaded for performance
-        self.favorites = FavoritesManager(cache_dir)  # Initialize favorites manager
-        
-        # Configure batch processing
-        self.batch_size = 25
-        self.batch_delay = 15  # seconds between batches
-        
-        # List of domains that are likely to be paywalled
-        self.protected_domains = [
-            'wsj.com',
-            'nytimes.com',
-            'bloomberg.com',
-            'ft.com',
-            'economist.com'
-        ]
-        
-        # Configure user agent and headers
-        self.headers = {
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
-        
-        # Initialize feed processing settings
-        self.config = RSSReaderConfig()
-        
-        # Initialize feed cache
-        self.feed_cache = FeedCache()
-    
-    def _get_sentence_transformer(self):
-        """
-        Lazy-load the sentence transformer model for semantic similarity.
-        Uses a lightweight but effective model for clustering.
-        """
-        if self._sentence_transformer is None:
-            logging.info("Load pretrained SentenceTransformer: all-MiniLM-L6-v2")
-            self._sentence_transformer = SentenceTransformer('all-MiniLM-L6-v2')
-        return self._sentence_transformer
-    
-    @track_performance()
-    def process_feeds(self, feed_urls, batch_size=25, batch_delay=15):
-        """
-        Process a list of RSS feeds in batches.
-        
-        Args:
-            feed_urls (List[str]): List of RSS feed URLs to process
-            batch_size (int): Number of articles to process in each batch
-            batch_delay (int): Delay between batches in seconds
-        
-        Returns:
-            List[Dict]: List of processed articles with summaries
-        """
-        logging.info(f"📊 Total Feeds: {len(feed_urls)}")
-        logging.info(f"📦 Batch Size: {batch_size}")
-        logging.info(f"⏱️  Batch Delay: {batch_delay} seconds")
-        
-        total_batches = (len(feed_urls) + batch_size - 1) // batch_size
-        logging.info(f"🔄 Total Batches: {total_batches}")
-        
-        all_articles = []
-        for i in range(0, len(feed_urls), batch_size):
-            batch = feed_urls[i:i + batch_size]
-            logging.info(f"\n🔄 Processing Batch {i//batch_size + 1}/{total_batches}: Feeds {i+1} to {min(i+batch_size, len(feed_urls))}")
-            
-            try:
-                # Process each feed in the batch
-                for url in batch:
-                    try:
-                        # Parse feed
-                        feed = feedparser.parse(url)
-                        
-                        # Process each entry
-                        for entry in feed.entries:
-                            try:
-                                entry = self.process_feed_entry(entry)
-                                entry['feed_source'] = feed.feed.get('title', url)
-                                all_articles.append(entry)
-                            except Exception as e:
-                                logging.error(f"❌ Error processing entry from {url}: {e}")
-                                
-                    except Exception as e:
-                        logging.error(f"❌ Error processing feed {url}: {e}")
-                        
-                if i + batch_size < len(feed_urls):
-                    time.sleep(batch_delay)
-                    
-            except Exception as e:
-                logging.error(f"❌ Error processing batch: {e}")
-        
-        return all_articles
-    
-    def get_cache_key(self, url):
-        """Generate a cache key for a URL."""
-        return hashlib.md5(url.encode()).hexdigest()
+        # Initialize sentence transformer
+        self.model = None
+        self.device = None
 
-    def get_from_cache(self, url):
-        """Retrieve content from cache if available and not expired."""
-        cache_key = self.get_cache_key(url)
-        cache_file = os.path.join(self.cache_dir, f"{cache_key}.json")
-        
+    def _load_default_feeds(self):
+        """Load feed URLs from the default file."""
+        feeds = []
         try:
-            if os.path.exists(cache_file):
-                with open(cache_file, 'r') as f:
-                    cached_data = json.load(f)
-                
-                # Parse timestamp with timezone info
-                cached_time = datetime.fromisoformat(cached_data['timestamp'])
-                if isinstance(cached_time, datetime) and cached_time.tzinfo is None:
-                    cached_time = self.eastern_tz.localize(cached_time)
-                
-                # Check if cache is still valid (24 hours)
-                current_time = self.get_current_eastern_time()
-                if current_time - cached_time < timedelta(hours=24):
-                    print(f"Retrieved from cache: {url}")
-                    return cached_data['content']
-        except Exception as e:
-            print(f"Error reading cache: {e}")
-        
-        return None
-
-    def save_to_cache(self, url, content):
-        """Save content to cache."""
-        if not content:
-            return
-            
-        cache_key = self.get_cache_key(url)
-        cache_file = os.path.join(self.cache_dir, f"{cache_key}.json")
-        
-        try:
-            cache_data = {
-                'url': url,
-                'content': content,
-                'timestamp': self.get_current_eastern_time().isoformat()
-            }
-            
-            with open(cache_file, 'w') as f:
-                json.dump(cache_data, f)
-        except Exception as e:
-            print(f"Error saving to cache: {e}")
-
-    @RateLimiter(max_calls_per_minute=20)
-    def make_request_with_retry(self, url, max_retries=3, initial_delay=1):
-        """Make HTTP request with exponential backoff retry."""
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
-        }
-        
-        for attempt in range(max_retries):
-            try:
-                response = requests.get(url, headers=headers, timeout=15)
-                response.raise_for_status()
-                return response
-            except requests.RequestException as e:
-                if attempt == max_retries - 1:
-                    raise e
-                
-                delay = initial_delay * (2 ** attempt)  # Exponential backoff
-                delay = delay  # Add jitter
-                # time.sleep(delay + jitter)
-        
-        return None
-
-    def try_archive_service(self, service_url, url):
-        """Try to fetch content from a specific archive service."""
-        try:
-            archive_url = service_url + url
-            response = self.make_request_with_retry(archive_url)
-            
-            if response and response.status_code == 200:
-                soup = BeautifulSoup(response.text, 'html.parser')
-                
-                # Try to find main content
-                for selector in ['article', 'main', '.article-body', '.story-body', '.post-content']:
-                    content = soup.select_one(selector)
-                    text = self.extract_text_content(content)
-                    if text:
-                        print(f"Successfully retrieved content from {service_url}")
-                        return text
-            
-            return None
-        except Exception as e:
-            print(f"Error checking {service_url}: {e}")
-            return None
-
-    def get_article_content(self, entry, feed_entry=None):
-        """Get the full article content from the URL."""
-        try:
-            url = entry.get('link', '')
-            if not url:
-                return None, None
-
-            # Check if URL is in cache
-            cached_content = self.get_from_cache(url)
-            if cached_content:
-                # Create BeautifulSoup object for cached content
-                soup = BeautifulSoup(cached_content, 'html.parser')
-                return cached_content, soup
-
-            # Check if URL is from a protected domain
-            if self.is_protected_content(url):
-                print(f"🔒 Attempting to bypass paywall for {url}")
-                # Try archive services
-                for service in self.archive_services:
-                    archive_content = self.try_archive_service(service, url)
-                    if archive_content:
-                        soup = BeautifulSoup(archive_content, 'html.parser')
-                        # Save to cache
-                        self.save_to_cache(url, archive_content)
-                        return archive_content, soup
-
-            # Fetch article content
-            content, soup = self.fetch_article_content(url)
-
-            # Save to cache if content is retrieved
-            if content:
-                self.save_to_cache(url, content)
-
-            return content, soup
-
-        except Exception as e:
-            print(f"Error getting article content: {e}")
-            return None, None
-
-    def fetch_article_content(self, url):
-        """
-        Fetch the main content of an article from a given URL, trying various bypass methods.
-        
-        Args:
-            url (str): URL of the article to fetch
-        
-        Returns:
-            tuple: (article_text, BeautifulSoup object)
-        """
-        try:
-            # Skip paywalled sites
-            if any(domain in url.lower() for domain in self.protected_domains):
-                logger.warning(f"Protected content detected, trying bypass methods: {url}")
-                return None, None
-
-            # Try direct fetch first
-            response = requests.get(url, headers=self.headers, timeout=10)
-            if response.status_code == 200:
-                content, soup = self.extract_article_content(response.text)
-                if content:
-                    return content, soup
-                    
-            # If direct fetch fails or no content found, try bypass methods
-            return self.fetch_with_bypass(url)
-            
-        except requests.RequestException as e:
-            logger.error(f"Request error fetching article from {url}: {str(e)}")
-            return None, None
-        except Exception as e:
-            logger.error(f"Error fetching article from {url}: {str(e)}")
-            return None, None
-
-    def process_feed_entry(self, entry):
-        """Process a single feed entry."""
-        try:
-            # Extract article URL
-            url = entry.get('link', '')
-            if not url:
-                logger.warning("Entry has no URL")
-                return None
-                
-            # Get the article content
-            content = entry.get('content', [{}])[0].get('value', '') or entry.get('summary', '')
-            if not content:
-                # If no content in feed, try fetching from URL
-                content, _ = self.fetch_article_content(url)
-                if not content:
-                    logger.warning(f"No content found for article: {url}")
-                    return None
-            
-            # Clean and summarize content if needed
-            summary = None
-            if len(content) > 50:  # Lower threshold to ensure we get summaries
-                try:
-                    summary = self.summarize_text(content, entry.get('title'))
-                    logging.info(f"Generated summary for article: {entry.get('title', 'Unknown title')}")
-                except Exception as e:
-                    logging.error(f"Failed to generate summary: {str(e)}")
-            
-            # Get publication date
-            published = entry.get('published', entry.get('updated', 'No date available'))
-            
-            # Extract source name
-            source = entry.get('feed_source')
-            if not source:
-                source = self.get_publication_name(url, feed_entry=entry)
-                if source == "Unknown source":
-                    # Try harder to get a source name
-                    source = self.get_publication_name(url)
-        
-            return {
-                'title': entry.get('title', 'No title available'),
-                'link': url,
-                'published': published,
-                'content': content,
-                'summary': summary if summary else None,  # Store the entire summary dictionary
-                'model': summary.get('model', 'Fallback') if summary else 'Fallback',
-                'source': source  # Use the improved source extraction
-            }
-            
-        except Exception as e:
-            logger.error(f"Error processing feed entry {entry.get('link', 'Unknown URL')}: {str(e)}")
-            return None
-
-    def write_to_html(self, articles, output_file=None):
-        """Write articles to an HTML file."""
-        try:
-            if not articles:
-                logger.warning("No articles to write to HTML")
-                return None
-                
-            # Create output directory if it doesn't exist
-            output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'output')
-            os.makedirs(output_dir, exist_ok=True)
-            
-            # Generate output filename if not provided
-            if not output_file:
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                output_file = os.path.join(output_dir, f'rss_summary_{timestamp}.html')
-            
-            # Generate HTML content
-            html_content = f'''
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <meta charset="UTF-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1">
-                <title>AI News Summary</title>
-                <style>
-                    body {
-                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-                        line-height: 1.6;
-                        max-width: 1200px;
-                        margin: 0 auto;
-                        padding: 20px;
-                        background-color: #f5f5f5;
-                    }
-                    h1 {
-                        color: #333;
-                        border-bottom: 2px solid #ddd;
-                        padding-bottom: 10px;
-                    }
-                    .article {
-                        background: white;
-                        border-radius: 8px;
-                        padding: 25px;
-                        margin-bottom: 30px;
-                        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                    }
-                    .article.cluster {
-                        border-left: 4px solid #3498db;
-                    }
-                    .article h2 {
-                        margin-top: 0;
-                        color: #2c3e50;
-                    }
-                    .article-meta {
-                        color: #7f8c8d;
-                        font-size: 0.9em;
-                        margin-bottom: 20px;
-                    }
-                    .article-summary {
-                        background: #f8f9fa;
-                        border-radius: 6px;
-                        padding: 20px;
-                        margin-bottom: 20px;
-                    }
-                    .summary-header {
-                        margin-bottom: 15px;
-                        color: #2c3e50;
-                    }
-                    .summary-content {
-                        margin-bottom: 15px;
-                        line-height: 1.7;
-                    }
-                    .summary-footer {
-                        color: #7f8c8d;
-                        font-size: 0.9em;
-                        display: flex;
-                        justify-content: space-between;
-                        border-top: 1px solid #eee;
-                        padding-top: 15px;
-                        margin-top: 15px;
-                    }
-                    .article-footer {
-                        margin-top: 20px;
-                    }
-                    .article-link {
-                        color: #3498db;
-                        text-decoration: none;
-                    }
-                    .article-link:hover {
-                        color: #2980b9;
-                        text-decoration: underline;
-                    }
-                    .article-sources {
-                        margin-top: 20px;
-                        padding-top: 20px;
-                        border-top: 1px solid #eee;
-                    }
-                    .article-sources h3 {
-                        color: #2c3e50;
-                        margin-top: 0;
-                        margin-bottom: 15px;
-                        font-size: 1.1em;
-                    }
-                    .source-list {
-                        list-style: none;
-                        padding: 0;
-                        margin: 0;
-                    }
-                    .source-list li {
-                        margin-bottom: 10px;
-                        padding-left: 20px;
-                        position: relative;
-                    }
-                    .source-list li:before {
-                        content: "•";
-                        color: #3498db;
-                        position: absolute;
-                        left: 0;
-                    }
-                    .model-info, .timestamp-info {
-                        display: inline-block;
-                        padding: 4px 8px;
-                        border-radius: 4px;
-                        background: #e8e8e8;
-                        font-size: 0.85em;
-                    }
-                </style>
-            </head>
-            <body>
-                <h1>AI News Summary</h1>
-            '''
-            
-            # Process and write clusters
-            clusters = self.cluster_similar_articles(articles)
-            for cluster in clusters:
-                if len(cluster) == 1:
-                    # Single article - display as before
-                    article = cluster[0]
-                    summary_dict = article.get('summary', {})
-                    
-                    if isinstance(summary_dict, str):
-                        try:
-                            summary_dict = json.loads(summary_dict)
-                        except:
-                            summary_dict = {'headline': 'No Headline', 'summary': summary_dict}
-                    
-                    headline = summary_dict.get('headline', article.get('title', 'No headline available'))
-                    summary_text = summary_dict.get('summary', 'No summary available')
-                    model = summary_dict.get('model', 'Unknown')
-                    timestamp = summary_dict.get('timestamp')
-                    timestamp_str = datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S') if timestamp else 'Unknown'
-                    
-                    html_content += f'''
-                    <div class="article">
-                        <h2>{html.escape(headline)}</h2>
-                        <div class="article-meta">
-                            From <a href="{html.escape(str(article.get('link', '#')))}" target="_blank">{html.escape(str(article.get('feed_source', 'Unknown Source')))}</a>
-                        </div>
-                        <div class="article-summary">{html.escape(summary_text)}</div>
-                        <div class="metadata">
-                            Model: {html.escape(model)} | Generated: {html.escape(timestamp_str)}
-                        </div>
-                    </div>
-                    '''
-                else:
-                    # Multiple similar articles - generate combined summary
-                    summary = self.generate_cluster_summary(cluster)
-                    if summary:
-                        if isinstance(summary, str):
-                            try:
-                                summary = json.loads(summary)
-                            except:
-                                summary = {'headline': 'No Headline', 'summary': summary}
-                        
-                        headline = summary.get('headline', 'Related Articles')
-                        summary_text = summary.get('summary', 'No summary available')
-                        model = summary.get('model', 'Unknown')
-                        timestamp = summary.get('timestamp')
-                        timestamp_str = datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S') if timestamp else 'Unknown'
-                        
-                        # Get sources from the cluster
-                        source_list = []
-                        for article in cluster:
-                            source_list.append({
-                                'title': article.get('title', 'No title'),
-                                'link': article['link'],
-                                'source': article.get('feed_source', 'Unknown Source')
-                            })
-                        
-                        html_content += f'''
-                        <div class="article cluster">
-                            <h2>{html.escape(headline)}</h2>
-                            <div class="article-meta">
-                                From multiple sources:
-                                <ul class="source-list">
-                        '''
-                        
-                        for source in source_list:
-                            html_content += f'''
-                                <li>
-                                    <a href="{html.escape(source['link'])}" target="_blank">
-                                        {html.escape(source['title'])} ({html.escape(source['source'])})
-                                    </a>
-                                </li>
-                            '''
-                        
-                        html_content += f'''
-                                </ul>
-                            </div>
-                            <div class="article-summary">{html.escape(summary_text)}</div>
-                            <div class="metadata">
-                                Model: {html.escape(model)} | Generated: {html.escape(str(timestamp_str))}
-                            </div>
-                        </div>
-                        '''
-            
-            # Add footer
-            html_content += f'''
-                <div class="footer">
-                    <p>Generated on {datetime.now().strftime("%Y-%m-%d %H:%M:%S")} using Claude</p>
-                </div>
-            </body>
-            </html>
-            '''
-            
-            # Write to file
-            with open(output_file, 'w', encoding='utf-8') as f:
-                f.write(html_content)
-                
-            logger.info(f"✅ HTML output written to {output_file}")
-            return output_file
-            
-        except Exception as e:
-            logger.error(f"Error generating HTML for article: {str(e)}")
-            return None
-            
-    def generate_concise_summary(self, text):
-        """Generate a concise 3-4 sentence summary following the style guide."""
-        try:
-            if not text:
-                return None
-                
-            prompt = """You are an expert at creating summaries of articles. Summaries will be three to four sentences in length. Summaries should be factual, informative, fairly simple in structure, and free from exaggeration, hype, or marketing speak.
-
-STYLE: 
-- Avoid passive voice
-- Choose non-compound verbs whenever possible
-- Avoid the words "content" and "creator"
-- Instead of "open-source," use "open source"
-- Spell out numbers (e.g., "8 billion" not "8B")
-- Use "U.S." and "U.K." with periods; use "AI" without periods
-- Use smart quotes, not straight quotes
-
-The first sentence should explain what has happened in clear, simple language.
-The second sentence should identify important details that are relevant to an audience of AI developers.
-The third sentence should explain why this information matters to an audience of readers who closely follow AI news.
-
-Please summarize the following text in this style:
-
-{text}
-"""
-            
-            # Call Claude API directly for summary generation
-            response = self.anthropic.messages.create(
-                model=self.model,
-                max_tokens=1000,
-                temperature=0.3,
-                messages=[{"role": "user", "content": prompt}]
-            )
-            
-            if response and response.content:
-                # Extract just the summary text, removing any "Here's a summary:" prefix
-                summary_text = str(response.content)
-                if "Here's a summary:" in summary_text:
-                    summary_text = summary_text.split("Here's a summary:", 1)[1].strip()
-                elif "Here's a concise summary:" in summary_text:
-                    summary_text = summary_text.split("Here's a concise summary:", 1)[1].strip()
-                    
-                return summary_text
-                
-            return None
-            
-        except Exception as e:
-            logger.error(f"Error generating concise summary: {str(e)}")
-            return None
-    
-    def fetch_articles(self, feeds_file='rss_test.txt'):
-        """
-        Fetch articles from multiple RSS feeds.
-        
-        Args:
-            feeds_file (str): Path to file containing RSS feed URLs
-        
-        Returns:
-            list: Collected articles from all feeds
-        """
-        # Read all feeds from the file
-        with open(feeds_file, 'r') as f:
-            feed_urls = [line.strip() for line in f if line.strip() and not line.startswith('#')]
-        
-        # Collect articles from all feeds
-        all_articles = []
-        
-        # Process each feed
-        for url in feed_urls:
-            try:
-                # Sanitize the feed URL
-                url = url.split('#')[0].strip()  # Remove comments and strip whitespace
-                url = ''.join(char for char in url if ord(char) >= 32)  # Remove control characters
-                
-                # Parse the feed
-                parsed_feed = feedparser.parse(url)
-                
-                # Validate feed
-                if not parsed_feed.entries:
-                    print(f"⚠️ No entries found in feed: {url}")
-                    continue
-                
-                # Process each entry in the feed
-                for entry in parsed_feed.entries:
-                    try:
-                        # Get feed title from multiple possible locations
-                        feed_title = (
-                            parsed_feed.feed.get('title') or
-                            parsed_feed.feed.get('subtitle') or
-                            parsed_feed.feed.get('description') or
-                            parsed_feed.feed.get('link') or
-                            self.get_publication_name(url)
-                        )
-                        
-                        # Clean up feed title if it's a URL
-                        if feed_title and (feed_title.startswith('http://') or feed_title.startswith('https://')):
-                            feed_title = self.get_publication_name(feed_title)
-                        
-                        # Add feed source to the entry
-                        entry['feed_source'] = feed_title
-                        all_articles.append(entry)
-                    except Exception as e:
-                        print(f"❌ Error processing entry from {url}: {e}")
-            
-            except Exception as e:
-                print(f"❌ Error parsing feed {url}: {e}")
-        
-        # Sort articles by publication date in descending order
-        all_articles.sort(
-            key=lambda x: x.get('published_parsed', datetime.min), 
-            reverse=True
-        )
-        
-        return all_articles
-
-    @track_performance()
-    def process_feeds(self, feeds_file='rss_test.txt'):
-        """Process RSS feeds and generate summaries."""
-        try:
-            # Load feed URLs
-            feed_urls = self.load_feed_urls(feeds_file)
-            if not feed_urls:
-                logger.error("No feed URLs found")
-                return None
-                
-            logger.info(f"📊 Total Feeds: {len(feed_urls)}")
-            logger.info(f"📦 Batch Size: {self.batch_size}")
-            logger.info(f"⏱️  Batch Delay: {self.batch_delay} seconds")
-            
-            total_batches = (len(feed_urls) + self.batch_size - 1) // self.batch_size
-            logger.info(f"🔄 Total Batches: {total_batches}")
-            
-            all_articles = []
-            batch_start_time = time.time()
-            
-            for batch_num in range(total_batches):
-                start_idx = batch_num * self.batch_size
-                end_idx = min(start_idx + self.batch_size, len(feed_urls))
-                batch_urls = feed_urls[start_idx:end_idx]
-                
-                logger.info(f"\n🔄 Processing Batch {batch_num + 1}/{total_batches}: Feeds {start_idx + 1} to {end_idx}")
-                
-                for feed_url in batch_urls:
-                    try:
-                        # Parse the RSS feed
-                        feed = feedparser.parse(feed_url)
-                        
-                        if not feed.entries:
-                            logger.warning(f"No entries found in feed: {feed_url}")
-                            continue
-                            
-                        logger.info(f"📰 Found {len(feed.entries)} articles in feed: {feed_url}")
-                        
-                        # Process each article in the feed
-                        for entry in feed.entries:
-                            try:
-                                article = self.process_feed_entry(entry)
-                                if article:
-                                    all_articles.append(article)
-                            except Exception as e:
-                                logger.error(f"❌ Failed to process entry: {entry.get('link', 'Unknown URL')}\n{str(e)}")
-                                continue
-                                
-                    except Exception as e:
-                        logger.error(f"❌ Failed to process feed: {feed_url}\n{str(e)}")
-                        continue
-                
-                batch_time = time.time() - batch_start_time
-                logger.info(f"⏱️  Batch {batch_num + 1} Processing Time: {batch_time:.2f} seconds")
-                
-                # Add delay between batches if not the last batch
-                if batch_num < total_batches - 1:
-                    time.sleep(self.batch_delay)
-                    
-            # Log final statistics
-            total_time = time.time() - batch_start_time
-            logger.info("\n🎉 Processing Complete!")
-            logger.info(f"📊 Total Articles Processed: {len(all_articles)}")
-            logger.info(f"❌ Failed Articles: {sum(len(feed.entries) for feed in (feedparser.parse(url) for url in feed_urls)) - len(all_articles)}")
-            logger.info(f"⏱️  Total Processing Time: {total_time:.2f} seconds")
-            if all_articles:
-                logger.info(f"📈 Average Processing Time per Article: {total_time/len(all_articles):.2f} seconds")
-            
-            return all_articles
-            
-        except Exception as e:
-            logger.error(f"Error in process_feeds: {str(e)}")
-            raise
-
-    def load_feed_urls(self, feeds_file):
-        """Load feed URLs from a file."""
-        try:
-            if not os.path.exists(feeds_file):
-                logger.error(f"Feed file not found: {feeds_file}")
-                return []
-                
-            with open(feeds_file, 'r') as f:
-                # Read lines and clean them
-                urls = []
+            with open('rss_test.txt', 'r') as f:
                 for line in f:
-                    # Remove comments and whitespace
-                    url = line.split('#')[0].strip()
-                    if url:  # Skip empty lines
-                        urls.append(url)
-                        
-                if not urls:
-                    logger.warning("No URLs found in feed file")
-                    
-                return urls
+                    url = line.strip()
+                    if url and not url.startswith('#'):
+                        # Remove any inline comments and clean the URL
+                        url = url.split('#')[0].strip()
+                        url = ''.join(c for c in url if ord(c) >= 32)  # Remove control characters
+                        if url:
+                            feeds.append(url)
+            return feeds
         except Exception as e:
-            logger.error(f"Error loading feed URLs: {str(e)}")
+            logging.error(f"Error loading feed URLs: {str(e)}")
             return []
 
-    def process_article(self, url):
-        """Process a single article."""
+    def _parse_entry(self, entry):
+        """Parse a feed entry into an article."""
         try:
-            # Extract article content
-            article_text, soup = self.fetch_article_content(url)
+            # Extract content
+            content = ''
+            if hasattr(entry, 'content'):
+                raw_content = entry.content
+                if isinstance(raw_content, list) and raw_content:
+                    content = raw_content[0].get('value', '')
+                elif isinstance(raw_content, str):
+                    content = raw_content
+                elif isinstance(raw_content, (list, tuple)):
+                    content = ' '.join(str(item) for item in raw_content)
+                else:
+                    content = str(raw_content)
             
-            if not article_text:
-                logging.error(f"Could not extract content from {url}")
-                return None
-                
-            # Get article title
-            title = soup.title.string if soup and soup.title else "No title available"
+            # Fallback to summary
+            if not content and hasattr(entry, 'summary'):
+                content = entry.summary
             
-            # Generate summary
-            try:
-                summary_dict = self.summarize_text(article_text, title)
-                if not summary_dict:
-                    summary_dict = {
-                        'headline': title,
-                        'summary': "Failed to generate summary",
-                        'model': 'Error',
-                        'timestamp': str(int(time.time()))
-                    }
-                logging.info(f"Generated summary for article: {title}")
-            except Exception as e:
-                logging.error(f"Error generating summary for {url}: {str(e)}")
-                summary_dict = {
-                    'headline': title,
-                    'summary': "Summary generation failed",
-                    'model': 'Error',
-                    'timestamp': str(int(time.time()))
-                }
-                
+            # Final fallback to title
+            if not content:
+                content = getattr(entry, 'title', '')
+                logging.warning("Using title as content fallback")
+            
+            # Clean content
+            content = html.unescape(content)
+            content = re.sub(r'<[^>]+>', '', content)
+            content = content.strip()
+            
             return {
-                'title': title,
-                'url': url,
-                'content': article_text,
-                'summary': summary_dict,
-                'published': datetime.now(timezone.utc).isoformat()
+                'title': getattr(entry, 'title', 'No Title'),
+                'link': getattr(entry, 'link', '#'),
+                'published': getattr(entry, 'published', 'Unknown date'),
+                'content': content,
+                'feed_source': getattr(entry, 'feed', {}).get('title', 'Unknown Source')
             }
             
         except Exception as e:
-            logging.error(f"Error processing article {url}: {str(e)}")
+            logging.error(f"Error parsing entry: {str(e)}")
             return None
 
-    def fetch_article_content(self, url):
-        """
-        Fetch the main content of an article from a given URL.
-        
-        Args:
-            url (str): URL of the article to fetch
-        
-        Returns:
-            tuple: (article_text, BeautifulSoup object)
-        """
-        try:
-            # Skip paywalled sites
-            if any(domain in url.lower() for domain in self.protected_domains):
-                logger.warning(f"Content may be protected/paywalled: {url}")
-                return None, None
-
-            # Fetch the webpage
-            response = requests.get(url, headers=self.headers, timeout=10)
-            response.raise_for_status()
-            
-            # Parse HTML
-            soup = BeautifulSoup(response.text, 'html.parser')
-            
-            # Try various methods to extract article text
-            article_text = ""
-            
-            # Try extracting text from specific article-related tags
-            article_selectors = [
-                'article', 
-                'main', 
-                '.article-body', 
-                '.story-body', 
-                '.post-content', 
-                '#article-body', 
-                '.content', 
-                '.entry-content'
-            ]
-            
-            for selector in article_selectors:
-                content = soup.select_one(selector)
-                if content:
-                    # Extract text from paragraphs within the selected content
-                    paragraphs = content.find_all('p')
-                    article_text = "\n".join([p.get_text(strip=True) for p in paragraphs if p.get_text(strip=True)])
-                    
-                    # If we found some text, break the loop
-                    if article_text:
-                        break
-            
-            # If no text found, fall back to all paragraphs
-            if not article_text:
-                paragraphs = soup.find_all('p')
-                article_text = "\n".join([p.get_text(strip=True) for p in paragraphs if p.get_text(strip=True)])
-            
-            if not article_text:
-                logger.warning(f"No article text found for {url}")
-                return None, None
-                
-            # Clean up the text
-            article_text = re.sub(r'\s+', ' ', article_text)  # Replace multiple spaces
-            article_text = re.sub(r'\n\s*\n', '\n\n', article_text)  # Fix multiple newlines
-            article_text = article_text.strip()
-            
-            # Truncate to a reasonable length
-            article_text = article_text[:10000]
-            
-            return article_text, soup
-        
-        except requests.RequestException as e:
-            logger.error(f"Request error fetching article from {url}: {str(e)}")
-            return None, None
-        except Exception as e:
-            logger.error(f"Error fetching article from {url}: {str(e)}")
-            return None, None
-
-    def get_current_eastern_time(self):
-        """Get the current time in Eastern timezone."""
-        return datetime.now()
-
-    def parse_date(self, date_str):
-        """
-        Parse date string from RSS feed with multiple fallback methods.
-
-        Args:
-            date_str (str): Date string to parse
-
-        Returns:
-            datetime: Parsed datetime object or current time if parsing fails
-        """
-        try:
-            # Try parsing with dateutil first (most flexible)
-            from dateutil.parser import parse
-
-            # First, try parsing directly
-            try:
-                parsed_date = parse(date_str)
-
-                # If no timezone, localize to Eastern
-                if parsed_date.tzinfo is None:
-                    parsed_date = self.eastern_tz.localize(parsed_date)
-
-                return parsed_date
-            except Exception:
-                pass
-
-            # Try parsing from email utils (for RFC 2822 format)
-            try:
-                parsed_date = parsedate_to_datetime(date_str)
-
-                # If no timezone, localize to Eastern
-                if parsed_date.tzinfo is None:
-                    parsed_date = self.eastern_tz.localize(parsed_date)
-
-                return parsed_date
-            except Exception:
-                pass
-
-            # Fallback to current time
-            return self.get_current_eastern_time()
-
-        except ImportError:
-            # If dateutil is not available, use more basic parsing
-            try:
-                # Try parsing ISO format
-                try:
-                    parsed_date = datetime.fromisoformat(date_str)
-
-                    # If no timezone, localize to Eastern
-                    if parsed_date.tzinfo is None:
-                        parsed_date = self.eastern_tz.localize(parsed_date)
-
-                    return parsed_date
-                except Exception:
-                    pass
-
-                # Fallback to current time
-                return self.get_current_eastern_time()
-
-            except Exception:
-                # Absolute last resort
-                return self.get_current_eastern_time()
-
-    def is_within_last_seven_days(self, pub_date):
-        if pub_date is None:
-            return False
-        
-        # Convert both datetimes to UTC if they have different timezones
-        current_time = datetime.now(timezone.utc)
-        pub_date = pub_date.astimezone(timezone.utc) if pub_date.tzinfo else current_time.replace(tzinfo=None)
-        
-        # Compare only the datetime values
-        time_diff = current_time - pub_date
-        return time_diff.total_seconds() <= 7 * 24 * 60 * 60  # 7 days
-
-    def get_topic_keywords(self, text):
-        """Extract main keywords from text."""
-        # Ensure text is a string
-        if not text:
-            return []
-
-        # Simple word frequency counting
-        words = re.findall(r'\b\w+\b', text.lower())
-        word_freq = {}
-        for word in words:
-            if len(word) > 3:  # Ignore short words
-                word_freq[word] = word_freq.get(word, 0) + 1
-
-        # Return top 10 keywords as a list
-        sorted_words = sorted(word_freq.items(), key=lambda x: x[1], reverse=True)
-        return [word for word, _ in sorted_words[:10]]  # Return just the words, not the counts
-
-    def calculate_similarity(self, keywords1, keywords2):
-        """Calculate similarity between two lists of keywords using Jaccard index."""
-        # Convert to lists if not already
-        if not isinstance(keywords1, list):
-            keywords1 = list(keywords1)
-        if not isinstance(keywords2, list):
-            keywords2 = list(keywords2)
-            
-        # Count common elements
-        common = len([x for x in keywords1 if x in keywords2])
-        total = len(keywords1) + len(keywords2) - common
-        
-        # Avoid division by zero
-        if total == 0:
-            return 0
-            
-        return common / total
-
     @track_performance()
-    def cluster_similar_articles(self, articles, similarity_threshold=0.5, max_clusters=10):
-        """
-        Advanced clustering of articles based on multi-dimensional semantic similarity.
-        
-        Uses sentence transformers to compute embeddings and cosine similarity
-        to group related articles together. This helps reduce redundancy and
-        provides a more comprehensive view of each news story.
-        
-        Args:
-            articles (list): List of article dictionaries
-            similarity_threshold (float): Threshold for clustering similar articles
-            max_clusters (int): Maximum number of clusters to generate
-        
-        Returns:
-            list: List of article clusters, where each cluster is a list of related articles
-        """
-        if not articles:
-            logging.warning("No articles provided for clustering")
-            return []
-            
+    def process_feeds(self):
+        """Process all RSS feeds and generate summaries."""
         try:
-            # Extract titles and summaries for comparison
-            texts = []
-            for article in articles:
-                title = article.get('title', '')
-                summary_dict = article.get('summary', {})
-                if not isinstance(summary_dict, dict):
-                    summary_dict = {}
-                summary = summary_dict.get('summary', '') if summary_dict else ''
-                combined_text = f"{title} {summary}".strip()
-                texts.append(combined_text)
-                
-            # Get embeddings using sentence transformer
-            embeddings = self._get_sentence_transformer().encode(texts)
+            all_articles = []
             
-            # Calculate similarity matrix
-            similarity_matrix = cosine_similarity(embeddings)
-            
-            # Initialize clusters
-            clusters = []
-            used_indices = set()  # Use a set for better performance
-            
-            # Create clusters based on similarity
-            for i in range(len(articles)):
-                if i in used_indices:
-                    continue
-                    
-                # Start new cluster
-                cluster = [articles[i]]
-                used_indices.add(i)
+            # Process feeds in batches
+            for batch in self._get_feed_batches():
+                logging.info(f"\n🔄 Processing Batch {batch['current']}/{batch['total']}: "
+                           f"Feeds {batch['start']} to {batch['end']}")
                 
-                # Find similar articles
-                for j in range(i + 1, len(articles)):
-                    if j in used_indices:
-                        continue
-                        
-                    if similarity_matrix[i][j] >= similarity_threshold:
-                        cluster.append(articles[j])
-                        used_indices.add(j)
-                        
-                clusters.append(cluster)
+                # Process each feed in the batch in parallel
+                with ThreadPoolExecutor(max_workers=min(len(batch['feeds']), 10)) as executor:
+                    futures = [executor.submit(self._process_feed, feed) for feed in batch['feeds']]
+                    batch_articles = []
+                    for future in as_completed(futures):
+                        articles = future.result()
+                        if articles:
+                            batch_articles.extend(articles)
                 
-                # Stop if we've reached max clusters
-                if len(clusters) >= max_clusters:
-                    break
-                    
-            # Add remaining articles as single-article clusters
-            for i in range(len(articles)):
-                if i not in used_indices:
-                    clusters.append([articles[i]])
-                    
-            return clusters
+                # Generate summaries for articles without them
+                for article in batch_articles:
+                    if not article.get('summary'):
+                        result = self._generate_summary(article['content'], article['title'], article['link'])
+                        article['summary'] = result
+                
+                all_articles.extend(batch_articles)
+                
+                # Add delay between batches if there are more
+                if batch['current'] < batch['total']:
+                    time.sleep(self.batch_delay)
+            
+            # Cluster similar articles
+            start_time = time.time()
+            clusters = self._cluster_articles(all_articles) if all_articles else []
+            duration = time.time() - start_time
+            logging.info(f"Performance: cluster_similar_articles took {duration:.4f} seconds "
+                        f"(CPU: {psutil.cpu_percent()}%, Memory: {psutil.Process().memory_info().rss} bytes)")
+            
+            # Generate HTML output
+            if clusters:
+                output_file = self.generate_html_output(clusters)
+                return output_file
+            
+            return None
+            
+        except Exception as e:
+            logging.error(f"Error processing feeds: {str(e)}")
+            return None
+
+    def _process_feed(self, feed_url):
+        """Process a single RSS feed."""
+        try:
+            feed = feedparser.parse(feed_url)
+            articles = []
+            
+            if feed.entries:
+                logging.info(f"📰 Found {len(feed.entries)} articles in feed: {feed_url}")
+                
+                for entry in feed.entries[:self.batch_size]:
+                    article = self._parse_entry(entry)
+                    if article:
+                        articles.append(article)
+            
+            return articles
+            
+        except Exception as e:
+            logging.error(f"Error processing feed {feed_url}: {str(e)}")
+            return []
+
+    def _generate_summary(self, article_text, title, url):
+        """Generate a summary for an article using the Anthropic API."""
+        try:
+            prompt = (
+                "Summarize this article in 3-4 sentences using active voice and factual tone. "
+                "Follow this structure:\n"
+                "1. First line: Create a headline in sentence case\n"
+                "2. Then a blank line\n"
+                "3. Then the summary that:\n"
+                "- Explains what happened in simple language\n"
+                "- Identifies key details for AI developers\n"
+                "- Explains why it matters to AI industry followers\n"
+                "- Spells out numbers and uses U.S./U.K. with periods\n\n"
+                f"Article:\n{article_text}\n\n"
+                f"URL: {url}"
+            )
+
+            response = self.client.messages.create(
+                model="claude-3-haiku-20240307",
+                max_tokens=400,
+                temperature=0.3,
+                system="You are an expert AI technology journalist. Be concise and factual.",
+                messages=[{
+                    "role": "user",
+                    "content": prompt
+                }]
+            )
+
+            summary_text = response.content[0].text.strip()
+            
+            # Split into headline and summary
+            lines = summary_text.split('\n', 1)
+            if len(lines) == 2:
+                headline = lines[0].strip()
+                summary = lines[1].strip()
+            else:
+                headline = title
+                summary = summary_text
+
+            return {
+                'headline': headline,
+                'summary': summary
+            }
+
+        except Exception as e:
+            logging.error(f"Error generating summary: {str(e)}")
+            return {
+                'headline': title,
+                'summary': "Summary generation failed. Please try again later."
+            }
+
+    def _cluster_articles(self, articles):
+        """Cluster similar articles together using sentence embeddings."""
+        try:
+            # Log performance metrics
+            start_time = time.time()
+            
+            # Get embeddings for all articles
+            model = SentenceTransformer('all-MiniLM-L6-v2')
+            
+            # Extract titles for clustering
+            titles = [article.get('title', '') for article in articles]
+            
+            # Get embeddings for titles
+            embeddings = model.encode(titles, show_progress_bar=True)
+            
+            # Cluster using DBSCAN
+            clustering = DBSCAN(eps=0.3, min_samples=1).fit(embeddings)
+            
+            # Group articles by cluster
+            clusters = {}
+            for idx, label in enumerate(clustering.labels_):
+                if label not in clusters:
+                    clusters[label] = []
+                clusters[label].append(articles[idx])
+                
+            # Convert to list of clusters
+            clustered_articles = list(clusters.values())
+            
+            # Log performance metrics
+            end_time = time.time()
+            duration = end_time - start_time
+            process = psutil.Process()
+            cpu_percent = process.cpu_percent()
+            memory_info = process.memory_info().rss
+            
+            logging.info(f"Performance: cluster_similar_articles took {duration:.4f} seconds "
+                        f"(CPU: {cpu_percent}%, Memory: {memory_info} bytes)")
+            
+            return clustered_articles
             
         except Exception as e:
             logging.error(f"Error clustering articles: {str(e)}")
-            # Return each article as its own cluster
-            return [[article] for article in articles]
+            return []
 
-    @track_performance()
-    def generate_html_output(self, clusters, output_dir='output'):
-        """Generate HTML output for the clusters."""
+    def _get_feed_batches(self):
+        """Generate batches of feeds to process."""
+        logging.info("🚀 Initializing RSS Reader...")
+        logging.info(f"📊 Total Feeds: {len(self.feeds)}")
+        logging.info(f"📦 Batch Size: {self.batch_size}")
+        logging.info(f"⏱️  Batch Delay: {self.batch_delay} seconds")
+        
+        total_batches = (len(self.feeds) + self.batch_size - 1) // self.batch_size
+        logging.info(f"🔄 Total Batches: {total_batches}")
+        
+        for batch_num in range(total_batches):
+            start_idx = batch_num * self.batch_size
+            end_idx = min((batch_num + 1) * self.batch_size, len(self.feeds))
+            yield {
+                'current': batch_num + 1,
+                'total': total_batches,
+                'start': start_idx + 1,
+                'end': end_idx,
+                'feeds': self.feeds[start_idx:end_idx]
+            }
+
+    def generate_html_output(self, clusters):
+        """
+        Generate HTML output from the processed articles.
+        
+        Args:
+            clusters (list): List of article clusters
+            
+        Returns:
+            str: Path to the generated HTML file
+        """
         try:
             # Create output directory if it doesn't exist
+            output_dir = os.path.join(os.getcwd(), 'output')
             os.makedirs(output_dir, exist_ok=True)
             
-            # Generate output filename with timestamp
+            # Generate timestamp for filename
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             output_file = os.path.join(output_dir, f'rss_summary_{timestamp}.html')
             
-            # Start HTML content
-            html_content = '''
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <meta charset="UTF-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1">
-                <title>AI News Summary</title>
-            <style>
-                body {
-                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-                    line-height: 1.6;
-                    max-width: 1200px;
-                    margin: 0 auto;
-                    padding: 20px;
-                    background-color: #f5f5f5;
-                }
-                /* ... rest of CSS styles ... */
-            </style>
-        </head>
-        <body>
-            <h1>AI News Summary</h1>
-            '''
-            
-            # Process each cluster
+            # Generate content for each cluster
+            content = ""
             for cluster in clusters:
-                try:
-                    html_content += self._process_cluster(cluster)
-                except Exception as cluster_error:
-                    logger.error(f"Error processing cluster: {str(cluster_error)}")
-                    continue
-        
-            # Add footer and close HTML
-            html_content += self._generate_html_footer()
-        
-            # Write to file
-            with open(output_file, 'w', encoding='utf-8') as f:
-                f.write(html_content)
-                
-            logger.info(f"✅ Output written to {output_file}")
-            return output_file
-        
-        except Exception as e:
-            logger.error(f"Error generating HTML output: {str(e)}")
-            if html_content:
-                # Try to save what we have so far
-                try:
-                    error_file = os.path.join(output_dir, f'rss_summary_error_{timestamp}.html')
-                    with open(error_file, 'w', encoding='utf-8') as f:
-                        f.write(html_content)
-                    logger.info(f"Partial output saved to {error_file}")
-                except Exception as save_error:
-                    logger.error(f"Could not save partial output: {str(save_error)}")
-            return None
-
-    def exponential_backoff(self, attempt):
-        """Generate exponential backoff with jitter."""
-        import random
-        base_delay = min(60, (2 ** attempt) + random.random())
-        return base_delay
-    
-    def get_publication_name(self, url, feed_entry=None, article_soup=None):
-        """Extract publication name from URL or feed entry."""
-        # First try to get from feed entry
-        if feed_entry and feed_entry.get('feed_source'):
-            return feed_entry['feed_source']
-        
-        if article_soup:
-            # Try to find publication name in meta tags
-            meta_publishers = [
-                article_soup.find('meta', attrs={'name': 'publisher'}),
-                article_soup.find('meta', attrs={'property': 'og:site_name'}),
-                article_soup.find('meta', attrs={'name': 'application-name'})
-            ]
-            for meta in meta_publishers:
-                if meta and meta.get('content'):
-                    return meta.get('content')
-        
-        # Fallback to URL-based extraction
-        try:
-            domain = urlparse(url).netloc
-            # Remove www. if present
-            if domain.startswith('www.'):
-                domain = domain[4:]
-            
-            # Split by dots and get the main part
-            parts = domain.split('.')
-            if len(parts) >= 2:
-                # Handle common domains directly
-                known_domains = {
-                    'engadget': 'Engadget',
-                    'techcrunch': 'TechCrunch',
-                    'forbes': 'Forbes',
-                    'gizbot': 'GizBot',
-                    'digit': 'Digit',
-                    'timesnownews': 'Times Now News',
-                    'gadgets360': 'Gadgets 360',
-                    'verdict': 'Verdict'
-                }
-                
-                if parts[0] in known_domains:
-                    return known_domains[parts[0]]
-                
-                # Handle cases like 'theverge.com', 'techcrunch.com'
-                if parts[0] in ['the', 'a', 'an']:
-                    return f"{parts[0].capitalize()}{parts[1].capitalize()}"
-                # Handle cases like 'blogs.nvidia.com'
-                elif len(parts) > 2 and parts[0] in ['blog', 'blogs', 'news']:
-                    return parts[1].capitalize()
-                else:
-                    # Try to make a readable name from the domain
-                    name = parts[0]
-                    # Split by common separators
-                    if '-' in name:
-                        words = name.split('-')
-                        return ' '.join(word.capitalize() for word in words)
-                    # Handle camelCase
-                    elif any(c.isupper() for c in name[1:]):
-                        words = []
-                        current_word = name[0]
-                        for char in name[1:]:
-                            if char.isupper():
-                                words.append(current_word)
-                                current_word = char
-                            else:
-                                current_word += char
-                        words.append(current_word)
-                        return ' '.join(word.capitalize() for word in words)
+                content += '<div class="cluster">'
+                for article in cluster:
+                    title = article.get('title', 'No Title')
+                    link = article.get('link', '#')
+                    summary = article.get('summary', {})
+                    if isinstance(summary, dict):
+                        headline = summary.get('headline', '')
+                        summary_text = summary.get('summary', '')
                     else:
-                        return name.capitalize()
-            
-            return domain.capitalize()
-        except Exception as e:
-            logging.warning(f"Error extracting publication name from URL {url}: {e}")
-            return "Unknown source"
-    
-    def fetch_url_with_headers(self, url):
-        """
-        Fetch article content using requests with custom headers.
-        
-        Args:
-            url (str): URL to fetch
-        
-        Returns:
-            str: Article text or empty string
-        """
-        try:
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
-            }
-            response = requests.get(url, headers=headers, timeout=10)
-            response.raise_for_status()
-            
-            # Use newspaper3k for parsing
-            article = Article(url)
-            article.download(input_html=response.text)
-            article.parse()
-            
-            return article.text or ""
-        except Exception as e:
-            logging.warning(f"Error fetching URL with headers: {e}")
-            return ""
-
-    def fetch_from_web_archive(self, url):
-        """
-        Fetch article content from Web Archive as a fallback.
-        
-        Args:
-            url (str): Original URL
-        
-        Returns:
-            str: Article text or empty string
-        """
-        try:
-            # Encode the original URL
-            encoded_url = urllib.parse.quote(url)
-            archive_url = f"https://web.archive.org/web/{encoded_url}"
-            
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
-            }
-            
-            response = requests.get(archive_url, headers=headers, timeout=10)
-            response.raise_for_status()
-            
-            # Use newspaper3k for parsing
-            article = Article(url)
-            article.download(input_html=response.text)
-            article.parse()
-            
-            return article.text or ""
-        except Exception as e:
-            logging.warning(f"Error fetching from Web Archive: {e}")
-            return ""
-
-    def generic_text_extraction(self, url):
-        """
-        Perform generic text extraction as a last resort.
-        
-        Args:
-            url (str): URL to extract text from
-        
-        Returns:
-            str: Extracted text or empty string
-        """
-        try:
-            # Use newspaper3k for generic extraction
-            article = Article(url)
-            article.download()
-            article.parse()
-            
-            return article.text or ""
-        except Exception as e:
-            logging.warning(f"Generic text extraction failed: {e}")
-            return ""
-
-    def extract_article_text(self, url, timeout=10):
-        """
-        Extract full text from an article using newspaper3k.
-        
-        Args:
-            url (str): URL of the article to extract
-            timeout (int): Timeout for downloading article in seconds
-        
-        Returns:
-            str: Extracted article text or empty string if extraction fails
-        """
-        try:
-            # Configure newspaper
-            config = Config()
-            config.browser_user_agent = self.headers['User-Agent']
-            config.request_timeout = timeout
-            config.fetch_images = False
-            
-            # Check if content is protected/paywalled
-            if self.is_protected_content(url):
-                logging.info(f"Protected content detected for {url}, attempting archive services")
-                # Try archive services first
-                for service_url in self.archive_services:
-                    content = self.try_archive_service(service_url, url)
-                    if content:
-                        return content
-            
-            # Skip video content
-            if 'video' in url.lower() or '/video/' in url.lower():
-                logging.info(f"Skipping video content from {url}")
-                return ""
-            
-            # Try direct extraction first
-            article = Article(url, config=config)
-            article.download()
-            article.parse()
-            
-            if not article.text:
-                # Fallback to custom extraction
-                text = self.fetch_url_with_headers(url)
-                if not text:
-                    text = self.fetch_from_web_archive(url)
-                if not text:
-                    text = self.generic_text_extraction(url)
-                return text
-            
-            return article.text.strip()
-            
-        except Exception as e:
-            logging.error(f"Error extracting article text from {url}: {e}")
-            # Try fallback methods
-            try:
-                text = self.fetch_url_with_headers(url)
-                if not text:
-                    text = self.fetch_from_web_archive(url)
-                if not text:
-                    text = self.generic_text_extraction(url)
-                return text
-            except Exception as e2:
-                logging.error(f"All extraction methods failed for {url}: {e2}")
-                return ""
-
-    def extract_article_content(self, html_text):
-        """Extract article content from HTML."""
-        try:
-            # Parse HTML
-            soup = BeautifulSoup(html_text, 'html.parser')
-            
-            # Try various methods to extract article text
-            article_text = ""
-            
-            # Try extracting text from specific article-related tags
-            article_selectors = [
-                'article', 
-                'main', 
-                '.article-body', 
-                '.story-body', 
-                '.post-content', 
-                '#article-body', 
-                '.content', 
-                '.entry-content',
-                '[role="article"]',
-                '[role="main"]',
-                '.post',
-                '.story',
-                '.article-content',
-                '#content-body'
-            ]
-            
-            # Remove unwanted elements
-            for selector in ['.ad', '.advertisement', '.social-share', '.newsletter', '.sidebar', 'nav', 'header', 'footer']:
-                for element in soup.select(selector):
-                    element.decompose()
-            
-            # Try each selector
-            for selector in article_selectors:
-                content = soup.select_one(selector)
-                if content:
-                    # Extract text from paragraphs within the selected content
-                    paragraphs = content.find_all('p')
-                    article_text = "\n".join([p.get_text(strip=True) for p in paragraphs if p.get_text(strip=True)])
+                        headline = ''
+                        summary_text = str(summary)
+                    published = article.get('published', 'Unknown date')
+                    source = article.get('feed_source', 'Unknown source')
                     
-                    # If we found some text, break the loop
-                    if article_text:
-                        break
-            
-            # If no text found, fall back to all paragraphs
-            if not article_text:
-                paragraphs = soup.find_all('p')
-                article_text = "\n".join([p.get_text(strip=True) for p in paragraphs if p.get_text(strip=True)])
-            
-            if not article_text:
-                logger.warning("No article text found")
-                return None, None
-                
-            # Clean up the text
-            article_text = re.sub(r'\s+', ' ', article_text)  # Replace multiple spaces
-            article_text = re.sub(r'\n\s*\n', '\n\n', article_text)  # Fix multiple newlines
-            article_text = article_text.strip()
-            
-            # Truncate to a reasonable length
-            article_text = article_text[:10000]
-            
-            return article_text, soup
-            
-        except Exception as e:
-            logger.error(f"Error extracting article content: {str(e)}")
-            return None, None
-
-    def summarize_text(self, text, title=None, max_retries=3):
-        """
-        Generate a summary of the given text using Claude API.
-        
-        Args:
-            text (str): The text to summarize
-            title (str): Optional title for context
-            max_retries (int): Maximum number of retries for API calls
-            
-        Returns:
-            Dict: Summary data including the summary text and metadata
-        """
-        if not text:
-            return {
-                'headline': title or 'No headline available',
-                'summary': 'No content available for summarization',
-                'model': self.model,
-                'timestamp': str(int(time.time()))
-            }
-            
-        # Generate cache key
-        cache_key = f"summary_{hashlib.md5(text.encode()).hexdigest()}"
-        
-        # Check cache first
-        cached_summary = self.cache.get(cache_key)
-        if cached_summary:
-            return cached_summary
-            
-        # Retry loop for API calls
-        for attempt in range(max_retries):
-            try:
-                # Make Claude API call with detailed error handling
-                prompt = f"""Please provide a concise summary of the following text in 3-4 sentences. Focus on the key points and newsworthy information:
-
-{text}
-
-Return the summary in this JSON format:
-{{
-    "headline": "Brief headline that captures main point",
-    "summary": "3-4 sentence summary of key points"
-}}"""
-
-                response = self.anthropic.messages.create(
-                    model=self.model,
-                    max_tokens=1024,
-                    temperature=0.3,
-                    messages=[{"role": "user", "content": prompt}]
-                )
-                
-                # Debug logging
-                logging.info(f"Response type: {type(response)}")
-                logging.info(f"Response attributes: {dir(response)}")
-                logging.info(f"Response content: {response.content}")
-                
-                # Extract summary from response
-                try:
-                    # Handle response content which may be a list of TextBlocks
-                    if isinstance(response.content, list):
-                        summary_text = response.content[0].text
-                    else:
-                        summary_text = str(response.content)
-                    
-                    # Try to parse as JSON
-                    try:
-                        summary_data = json.loads(summary_text)
-                        return {
-                            'headline': summary_data.get('headline', title or 'No headline available'),
-                            'summary': summary_data.get('summary', "Failed to parse summary"),
-                            'model': self.model,
-                            'timestamp': str(int(time.time()))
-                        }
-                    except json.JSONDecodeError:
-                        # If not valid JSON, use the raw text
-                        # Remove any "Here's a summary:" prefix if present
-                        text = str(summary_text)
-                        if "Here's a summary:" in text:
-                            text = text.split("Here's a summary:", 1)[1].strip()
-                        elif "Here's a concise summary:" in text:
-                            text = text.split("Here's a concise summary:", 1)[1].strip()
-                            
-                        return {
-                            'headline': title or 'No headline available',
-                            'summary': text,
-                            'model': self.model,
-                            'timestamp': str(int(time.time()))
-                        }
-                except Exception as e:
-                    logging.error(f"Failed to extract summary from response: {e}")
-                    return {
-                        'headline': title or 'No headline available',
-                        'summary': "Failed to generate summary. Please try again.",
-                        'model': 'Error',
-                        'timestamp': str(int(time.time()))
-                    }
-                
-            except Exception as e:
-                logging.error(f"Error in Claude API call (attempt {attempt + 1}/{max_retries}): {str(e)}")
-                if attempt == max_retries - 1:
-                    return {
-                        'headline': title or 'No headline available',
-                        'summary': f"Failed to generate summary: {str(e)}",
-                        'model': 'Error',
-                        'timestamp': str(int(time.time()))
-                    }
-                time.sleep(1)  # Wait before retrying
-    
-    @track_performance()
-    def cluster_similar_articles(self, articles, similarity_threshold=0.5, max_clusters=10):
-        """
-        Advanced clustering of articles based on multi-dimensional semantic similarity.
-        
-        Uses sentence transformers to compute embeddings and cosine similarity
-        to group related articles together. This helps reduce redundancy and
-        provides a more comprehensive view of each news story.
-        
-        Args:
-            articles (list): List of article dictionaries
-            similarity_threshold (float): Threshold for clustering similar articles
-            max_clusters (int): Maximum number of clusters to generate
-        
-        Returns:
-            list: List of article clusters, where each cluster is a list of related articles
-        """
-        if not articles:
-            logging.warning("No articles provided for clustering")
-            return []
-            
-        try:
-            # Extract titles and summaries for comparison
-            texts = []
-            for article in articles:
-                title = article.get('title', '')
-                summary_dict = article.get('summary', {})
-                if not isinstance(summary_dict, dict):
-                    summary_dict = {}
-                summary = summary_dict.get('summary', '') if summary_dict else ''
-                combined_text = f"{title} {summary}".strip()
-                texts.append(combined_text)
-                
-            # Get embeddings using sentence transformer
-            embeddings = self._get_sentence_transformer().encode(texts)
-            
-            # Calculate similarity matrix
-            similarity_matrix = cosine_similarity(embeddings)
-            
-            # Initialize clusters
-            clusters = []
-            used_indices = set()  # Use a set for better performance
-            
-            # Create clusters based on similarity
-            for i in range(len(articles)):
-                if i in used_indices:
-                    continue
-                    
-                # Start new cluster
-                cluster = [articles[i]]
-                used_indices.add(i)
-                
-                # Find similar articles
-                for j in range(i + 1, len(articles)):
-                    if j in used_indices:
-                        continue
-                        
-                    if similarity_matrix[i][j] >= similarity_threshold:
-                        cluster.append(articles[j])
-                        used_indices.add(j)
-                        
-                clusters.append(cluster)
-                
-            # Sort clusters by size and limit to max_clusters
-            clusters.sort(key=len, reverse=True)
-            clusters = clusters[:max_clusters]
-            
-            # Add remaining articles as single-article clusters
-            remaining_articles = [
-                articles[i] for i in range(len(articles))
-                if i not in used_indices
-            ]
-            
-            for article in remaining_articles:
-                clusters.append([article])
-                
-            return clusters
-            
-        except Exception as e:
-            logging.error(f"Error in clustering articles: {str(e)}")
-            logging.debug(traceback.format_exc())
-            # Return each article as its own cluster
-            return [[article] for article in articles]
-
-    @track_performance()
-    def process_feeds_with_clustering(self, feeds_file='rss_test.txt'):
-        """
-        Process RSS feeds with article clustering.
-        
-        Args:
-            feeds_file (str): Path to file containing RSS feed URLs
-        
-        Returns:
-            list: List of article clusters
-        """
-        try:
-            # Process feeds
-            articles = self.process_feeds(feeds_file)
-            if not articles:
-                return []
-            
-            # Cluster similar articles
-            clusters = self.cluster_similar_articles(articles)
-            
-            return clusters
-            
-        except Exception as e:
-            logger.error(f"Error in process_feeds_with_clustering: {str(e)}")
-            return []
-
-    def _process_cluster(self, cluster):
-        """Process a single cluster and return its HTML content."""
-        if len(cluster) == 1:
-            return self._process_single_article(cluster[0])
-        else:
-            return self._process_multiple_articles(cluster)
-
-    def _generate_html_footer(self):
-        """Generate the HTML footer."""
-        return f'''
-            <div class="footer">
-                <p>Generated on {datetime.now().strftime("%Y-%m-%d %H:%M:%S")} using Claude</p>
-            </div>
-        </body>
-        </html>
-        '''
-
-    def _process_single_article(self, article):
-        """Process a single article and return its HTML content."""
-        summary_dict = article.get('summary', {})
-        
-        if isinstance(summary_dict, str):
-            try:
-                summary_dict = json.loads(summary_dict)
-            except json.JSONDecodeError:
-                summary_dict = {'headline': 'No Headline', 'summary': summary_dict}
-        
-        headline = str(summary_dict.get('headline', article.get('title', 'No headline available')))
-        summary_text = str(summary_dict.get('summary', 'No summary available'))
-        model = str(summary_dict.get('model', 'Unknown'))
-        timestamp = summary_dict.get('timestamp')
-        try:
-            timestamp_int = int(timestamp)
-            timestamp_str = datetime.fromtimestamp(timestamp_int).strftime('%Y-%m-%d %H:%M:%S')
-        except (ValueError, TypeError):
-            timestamp_str = 'Unknown'
-            
-        source = str(article.get('feed_source', 'Unknown Source'))
-        link = str(article.get('link', '#'))
-        
-        return f'''
+                    content += f'''
         <div class="article">
-            <h2>{html.escape(headline)}</h2>
-            <div class="article-meta">
-                From <a href="{html.escape(link)}" target="_blank">{html.escape(source)}</a>
-            </div>
-            <div class="article-summary">{html.escape(summary_text)}</div>
+            <h2 class="title"><a href="{link}" target="_blank">{title}</a></h2>
             <div class="metadata">
-                Model: {html.escape(model)} | Generated: {html.escape(timestamp_str)}
+                Published: {published}<br>
+                Source: {source}
             </div>
-        </div>
-        '''
-
-    def _process_multiple_articles(self, cluster):
-        """Process multiple related articles and return their HTML content."""
-        summary = self.generate_cluster_summary(cluster)
-        if not summary:
-            return ''
-            
-        if isinstance(summary, str):
-            try:
-                summary = json.loads(summary)
-            except json.JSONDecodeError:
-                summary = {'headline': 'No Headline', 'summary': summary}
-        
-        headline = str(summary.get('headline', 'Related Articles'))
-        summary_text = str(summary.get('summary', 'No summary available'))
-        model = str(summary.get('model', 'Unknown'))
-        timestamp = summary.get('timestamp')
-        try:
-            timestamp_int = int(timestamp)
-            timestamp_str = datetime.fromtimestamp(timestamp_int).strftime('%Y-%m-%d %H:%M:%S')
-        except (ValueError, TypeError):
-            timestamp_str = 'Unknown'
-        
-        # Get sources from the cluster
-        source_list = []
-        for article in cluster:
-            pub_date = ''
-            if 'published_parsed' in article:
-                try:
-                    pub_date = time.strftime('%Y-%m-%d %H:%M:%S', article['published_parsed'])
-                except (TypeError, ValueError):
-                    pass
-            elif 'published' in article:
-                pub_date = str(article['published'])
-                
-            source_list.append({
-                'title': article.get('title', 'No title'),
-                'source': article.get('feed_source', 'Unknown Source'),
-                'link': article.get('link', '#'),
-                'pub_date': pub_date
-            })
-        
-        html_content = f'''
-        <div class="article cluster">
-            <h2>{html.escape(headline)}</h2>
-            <div class="article-meta">
-                From multiple sources:
-                <ul class="source-list">
-        '''
-        
-        for source in source_list:
-            html_content += f'''
-                <li>
-                    <a href="{html.escape(source['link'])}" target="_blank">
-                        {html.escape(source['title'])} ({html.escape(source['source'])})
-                    </a>
-                </li>
-            '''
-        
-        html_content += f'''
-                </ul>
+            <div class="summary">
+                <h3>{headline}</h3>
+                <p>{summary_text}</p>
             </div>
-            <div class="article-summary">{html.escape(summary_text)}</div>
-            <div class="metadata">
-                Model: {html.escape(model)} | Generated: {html.escape(timestamp_str)}
-            </div>
-        </div>
-        '''
-        
-        return html_content
-
-    def generate_cluster_summary(self, cluster):
-        """
-        Generate a summary for a cluster of related articles.
-        
-        Args:
-            cluster (list): List of related articles
+        </div>'''
+                content += '\n    </div>'
             
-        Returns:
-            dict: Summary data including headline, summary text, and metadata
-        """
-        try:
-            # Get the most recent article's title as the main headline
-            def get_article_date(article):
-                if 'published_parsed' in article and article['published_parsed']:
-                    return article['published_parsed']
-                if 'published' in article:
-                    return article['published']
-                return ''
+            # HTML template
+            html = f'''<!DOCTYPE html>
+<html>
+<head>
+    <title>RSS Feed Summary</title>
+    <style>
+        body {{
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }}
+        .article {{
+            background-color: white;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }}
+        .title {{
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }}
+        .summary {{
+            color: #34495e;
+            margin: 15px 0;
+        }}
+        .metadata {{
+            color: #7f8c8d;
+            font-size: 0.9em;
+            margin-top: 10px;
+        }}
+        .cluster {{
+            border-left: 5px solid #3498db;
+            padding-left: 15px;
+            margin-bottom: 30px;
+        }}
+        a {{
+            color: #3498db;
+            text-decoration: none;
+        }}
+        a:hover {{
+            text-decoration: underline;
+        }}
+        h1 {{
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 30px;
+        }}
+        .timestamp {{
+            text-align: center;
+            color: #7f8c8d;
+            margin-bottom: 30px;
+        }}
+    </style>
+</head>
+<body>
+    <h1>RSS Feed Summary</h1>
+    <div class="timestamp">Generated on: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</div>
+    <div class="content">
+{content}
+    </div>
+</body>
+</html>'''
             
-            main_article = max(cluster, key=get_article_date)
-            headline = main_article.get('title', 'No headline available')
+            # Write HTML file
+            with open(output_file, 'w', encoding='utf-8') as f:
+                f.write(html)
             
-            # Combine article texts for summarization
-            article_texts = []
-            for article in cluster:
-                # Extract content from each article
-                content = article.get('content', '')
-                if not content:
-                    content = article.get('summary', '')
-                if not content:
-                    content = article.get('description', '')
-                    
-                if content:
-                    # Clean the content
-                    soup = BeautifulSoup(content, 'html.parser')
-                    text = soup.get_text().strip()
-                    if text:
-                        article_texts.append(text)
+            logging.info(f"✅ Output written to {output_file}")
+            return output_file
             
-            # If no valid texts found, return basic info
-            if not article_texts:
-                return {
-                    'headline': headline,
-                    'summary': "No content available to summarize",
-                    'model': 'No content',
-                    'timestamp': int(time.time())
-                }
-                
-            # Combine the texts with newlines
-            combined_text = "\n\n".join(article_texts)
-            
-            # Generate a summary using Claude
-            prompt = f"""Here is a collection of related articles about {headline}. Please provide a comprehensive summary that captures the key points and details from all articles. Focus on facts and avoid speculation. Use clear, concise language.
-
-Articles:
-{combined_text}
-
-Please provide your summary in JSON format with these fields:
-{{"headline": "main headline", "summary": "comprehensive summary"}}"""
-
-            response = self.anthropic.messages.create(
-                model=self.model,
-                max_tokens=150,
-                messages=[{"role": "user", "content": prompt}]
-            )
-            
-            # Debug logging
-            logging.info(f"Response type: {type(response)}")
-            logging.info(f"Response attributes: {dir(response)}")
-            logging.info(f"Response content: {response.content}")
-            
-            # Extract summary from response
-            try:
-                # Handle response content which may be a list of TextBlocks
-                if isinstance(response.content, list):
-                    summary_text = response.content[0].text
-                else:
-                    summary_text = str(response.content)
-                
-                # Try to parse as JSON
-                try:
-                    summary_data = json.loads(summary_text)
-                    return {
-                        'headline': summary_data.get('headline', headline),
-                        'summary': summary_data.get('summary', "Failed to parse summary"),
-                        'model': self.model,
-                        'timestamp': int(time.time())
-                    }
-                except json.JSONDecodeError:
-                    # If not valid JSON, use the raw text
-                    # Remove any "Here's a summary:" prefix if present
-                    text = str(summary_text)
-                    if "Here's a summary:" in text:
-                        text = text.split("Here's a summary:", 1)[1].strip()
-                    elif "Here's a concise summary:" in text:
-                        text = text.split("Here's a concise summary:", 1)[1].strip()
-                        
-                    return {
-                        'headline': headline,
-                        'summary': text,
-                        'model': self.model,
-                        'timestamp': int(time.time())
-                    }
-            except Exception as e:
-                logging.error(f"Failed to extract summary from response: {e}")
-                return {
-                    'headline': headline,
-                    'summary': "Failed to generate summary. Please try again.",
-                    'model': 'Error',
-                    'timestamp': int(time.time())
-                }
-                
         except Exception as e:
-            logging.error(f"Error in generate_cluster_summary: {e}")
+            logging.error(f"Error generating HTML output: {str(e)}")
             return None
 
 def test_readwise_token():
@@ -3347,55 +1990,24 @@ def test_readwise_token():
 
 def main():
     """
-    Main function that orchestrates the RSS reader workflow.
-    
-    This function:
-    1. Sets up logging and configuration
-    2. Initializes the RSS reader
-    3. Processes feeds and generates summaries
-    4. Clusters similar articles
-    5. Generates HTML output
-    
-    The function handles errors gracefully and provides
-    informative error messages if something goes wrong.
+    Main function to run the RSS reader.
     """
     try:
-        # Configure logging
-        logging.basicConfig(
-            level=logging.INFO,
-            format='%(asctime)s - %(levelname)s: %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
-        )
-        
-        # Initialize RSS reader
-        logging.info("🚀 Initializing RSS Reader...")
-        reader = RSSReader()
-        
-        # Process feeds with clustering
-        logging.info("📊 Processing feeds and clustering articles...")
-        clusters = reader.process_feeds_with_clustering()
-        
-        if not clusters:
-            logging.warning("⚠️ No articles found or processed")
+        # Test Readwise token
+        if not test_readwise_token():
+            logging.error("❌ Failed to authenticate with Readwise API")
             return
+
+        # Initialize and run RSS reader
+        rss_reader = RSSReader()
+        output_file = rss_reader.process_feeds()
         
-        # Generate HTML output
-        logging.info("📝 Generating HTML output...")
-        output_file = reader.generate_html_output(clusters)
-        
-        if output_file:
-            # Open in browser
-            logging.info(f"✨ Opening {output_file} in browser...")
-            webbrowser.open(output_file)
-        
+        if not output_file:
+            logging.warning("⚠️ No articles found or processed")
+            
     except Exception as e:
         logging.error(f"❌ Error in main: {str(e)}")
-        logging.debug(traceback.format_exc())
-        sys.exit(1)
+        traceback.print_exc()
 
 if __name__ == "__main__":
-    # Test Readwise token loading
-    test_readwise_token()
-    
-    # Run main function
     main()
