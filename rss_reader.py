@@ -18,7 +18,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 from tqdm import tqdm
 from dotenv import load_dotenv
 from urllib.parse import urlparse
-from sklearn.cluster import DBSCAN
+from sklearn.cluster import DBSCAN  # Import DBSCAN for clustering
 import concurrent.futures
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
@@ -449,6 +449,7 @@ class SummaryCache:
         self.max_cache_size = max_cache_size
         os.makedirs(cache_dir, exist_ok=True)
         self.cache_file = os.path.join(cache_dir, 'summary_cache.json')
+        self.cache = {}
         self._load_cache()
     
     def _load_cache(self):
@@ -456,11 +457,18 @@ class SummaryCache:
         try:
             if os.path.exists(self.cache_file):
                 with open(self.cache_file, 'r') as f:
-                    self.cache = json.load(f)
+                    data = json.load(f)
+                    # Convert any string values to dict format
+                    for key, value in data.items():
+                        if isinstance(value, str):
+                            self.cache[key] = {
+                                'summary': value,
+                                'timestamp': time.time()
+                            }
+                        else:
+                            self.cache[key] = value
                 # Clean up expired entries
                 self._cleanup_cache()
-            else:
-                self.cache = {}
         except Exception as e:
             logging.error(f"Error loading cache: {e}")
             self.cache = {}
@@ -469,7 +477,6 @@ class SummaryCache:
         """Save the current cache to disk in JSON format."""
         try:
             with open(self.cache_file, 'w') as f:
-                self.cache['last_updated'] = datetime.now().isoformat()
                 json.dump(self.cache, f, indent=2)
         except Exception as e:
             logging.error(f"Error saving cache: {e}")
@@ -480,104 +487,54 @@ class SummaryCache:
         # Remove expired entries
         self.cache = {
             k: v for k, v in self.cache.items()
-            if current_time - v.get('timestamp', 0) < self.cache_duration
+            if isinstance(v, dict) and current_time - v.get('timestamp', 0) < self.cache_duration
         }
         
         # If still too large, remove oldest entries
         if len(self.cache) > self.max_cache_size:
             sorted_items = sorted(
                 self.cache.items(),
-                key=lambda x: x[1].get('timestamp', 0)
+                key=lambda x: x[1].get('timestamp', 0) if isinstance(x[1], dict) else 0
             )
             self.cache = dict(sorted_items[-self.max_cache_size:])
     
-    def get(self, key: str) -> Optional[Dict]:
-        """Retrieve a summary from the cache."""
+    def get(self, text):
+        """Retrieve cached summary for a given text."""
+        key = self._hash_text(text)
         if key in self.cache:
             entry = self.cache[key]
-            if time.time() - entry.get('timestamp', 0) < self.cache_duration:
+            if isinstance(entry, dict) and time.time() - entry.get('timestamp', 0) < self.cache_duration:
                 return entry
             else:
                 del self.cache[key]
         return None
     
-    def set(self, key: str, value: Dict):
-        """Store a summary in the cache."""
-        value['timestamp'] = time.time()
-        self.cache[key] = value
+    def set(self, text, summary):
+        """Cache a summary for a given text."""
+        key = self._hash_text(text)
+        if isinstance(summary, str):
+            summary = {'summary': summary}
+        summary['timestamp'] = time.time()
+        self.cache[key] = summary
         if len(self.cache) > self.max_cache_size:
             self._cleanup_cache()
         self._save_cache()
     
     def _hash_text(self, text):
         """Generate a hash for the given text to use as a cache key."""
-        import hashlib
         # Convert text to string if it's not already
-        if isinstance(text, (set, list, tuple)):
-            # Convert any iterable to a sorted list of strings
-            text = ' '.join(sorted(str(item) for item in text))
-        elif not isinstance(text, str):
+        if not isinstance(text, str):
             text = str(text)
         return hashlib.md5(text.encode('utf-8')).hexdigest()
     
-    def get(self, text, force_refresh=False):
-        """Retrieve cached summary for a given text."""
-        if force_refresh:
-            return None
-        
-        # Convert text to string if it's not already
-        if isinstance(text, (set, list, tuple)):
-            text = ' '.join(sorted(str(item) for item in text))
-        elif not isinstance(text, str):
-            text = str(text)
-        
-        text_hash = self._hash_text(text)
-        current_time = datetime.now(pytz.UTC)
-        
-        # Check if entry exists and is not expired
-        if text_hash in self.cache:
-            entry = self.cache[text_hash]
-            if 'timestamp' in entry:
-                entry_time = datetime.fromtimestamp(entry['timestamp'], pytz.UTC)
-                if current_time - entry_time < timedelta(seconds=self.cache_duration):
-                    # Convert any sets in the summary back to lists
-                    if isinstance(entry, dict) and 'summary' in entry:
-                        for field, value in entry['summary'].items():
-                            if isinstance(value, set):
-                                entry['summary'][field] = list(value)
-                    return entry
-        
-        return None
-    
-    def set(self, text, summary, force_update=False):
-        """Cache a summary for a given text."""
-        # Convert text to string if it's not already
-        if isinstance(text, (set, list, tuple)):
-            text = ' '.join(sorted(str(item) for item in text))
-        elif not isinstance(text, str):
-            text = str(text)
-        
-        text_hash = self._hash_text(text)
-        if text_hash not in self.cache or force_update:
-            self.cache[text_hash] = {
-                'timestamp': time.time(),
-                'summary': summary
-            }
-            self._save_cache()
-    
     def clear_cache(self):
         """Completely clear the cache."""
-        self.cache.clear()
+        self.cache = {}
         try:
             os.remove(self.cache_file)
         except FileNotFoundError:
             pass
-        
-        # Recreate cache file
-        with open(self.cache_file, 'w') as f:
-            json.dump({}, f)
-        
-        print("Summary cache has been cleared.")
+        self._save_cache()
 
 class RSSReaderConfig:
     """Configuration class for RSS Reader settings."""
@@ -1563,6 +1520,64 @@ class ReadwiseClient:
             logging.error(f"Error saving to Readwise: {e}")
             raise
 
+class ArticleSummarizer:
+    """Summarizes articles using Claude API."""
+    
+    def __init__(self):
+        """Initialize the summarizer with Claude API client."""
+        self.client = anthropic.Anthropic(api_key=get_env_var('ANTHROPIC_API_KEY'))
+        self.summary_cache = SummaryCache()
+        
+    def clean_text(self, text):
+        """Clean HTML and normalize text for summarization."""
+        # Remove HTML tags
+        soup = BeautifulSoup(text, 'html.parser')
+        text = soup.get_text()
+        
+        # Normalize whitespace
+        text = re.sub(r'\s+', ' ', text).strip()
+        
+        # Decode HTML entities
+        text = html.unescape(text)
+        
+        return text
+        
+    def summarize_article(self, text, force_refresh=False):
+        """Generate a concise summary of the article text."""
+        # Clean the text first
+        text = self.clean_text(text)
+        
+        # Check cache first
+        cached_summary = self.summary_cache.get(text)
+        if cached_summary and not force_refresh:
+            return cached_summary['summary']
+        
+        try:
+            # Generate summary using Claude
+            messages = [
+                {
+                    "role": "user",
+                    "content": f"Please provide a concise 2-3 sentence summary of this article text: {text}"
+                }
+            ]
+            response = rate_limited_api_call(
+                self.client,
+                messages,
+                model="claude-3-haiku-20240307",
+                max_tokens=150
+            )
+            
+            summary = response.content[0].text
+            
+            # Cache the summary
+            self.summary_cache.set(text, {'summary': summary})
+            
+            return summary
+            
+        except Exception as e:
+            logging.error(f"Error generating summary: {str(e)}")
+            return "Summary not available."
+
 class RSSReader:
     """
     Main class that handles RSS feed processing, article summarization, and clustering.
@@ -1749,7 +1764,7 @@ class RSSReader:
                 }]
             )
 
-            summary_text = response.content[0].text.strip()
+            summary_text = response.content[0].text
             
             # Split into headline and summary
             lines = summary_text.split('\n', 1)

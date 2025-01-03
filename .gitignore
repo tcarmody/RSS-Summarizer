@@ -17,6 +17,7 @@ performance_logs/
 # Output files
 output/
 *.html
+!templates/*.html
 
 # Environment files
 .env
@@ -29,7 +30,7 @@ output/
 .LSOverride
 
 # IDE files
-.vscode/
 .idea/
+.vscode/
 *.swp
 *.swo

@@ -1,0 +1,35 @@
+body {
+    background-color: #f8f9fa;
+}
+
+.article-card {
+    transition: transform 0.2s;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.article-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+.article-tags .badge {
+    cursor: pointer;
+}
+
+.tags-list .badge {
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.tags-list .badge:hover {
+    background-color: #0056b3;
+}
+
+.card {
+    border: none;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.navbar {
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}

@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RSS Reader</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="/">RSS Reader</a>
+            <div class="d-flex">
+                <input class="form-control me-2" type="search" id="search-input" placeholder="Search articles...">
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <div class="row">
+            <div class="col-md-3">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Tags</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="tags-list">
+                            {% for tag, count in tags.items() %}
+                                <span class="badge bg-primary me-1 mb-1">
+                                    {{ tag }} ({{ count }})
+                                </span>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card mt-3">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Export</h5>
+                    </div>
+                    <div class="card-body">
+                        <form id="export-form">
+                            <div class="mb-3">
+                                <label class="form-label">Format</label>
+                                <select class="form-select" name="format">
+                                    <option value="html">HTML</option>
+                                    <option value="pdf">PDF</option>
+                                    <option value="email">Email</option>
+                                </select>
+                            </div>
+                            <div class="form-check mb-3">
+                                <input class="form-check-input" type="checkbox" name="include_summary" checked>
+                                <label class="form-check-label">Include Summaries</label>
+                            </div>
+                            <button type="submit" class="btn btn-primary">Export</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-9">
+                <div id="articles-container">
+                    <h3 class="mb-4">Current Articles</h3>
+                    {% for article in current_articles %}
+                        <div class="card mb-3 article-card">
+                            <div class="card-body">
+                                <h5 class="card-title">{{ article.title }}</h5>
+                                <p class="card-text">{{ article.summary }}</p>
+                                <div class="btn-group">
+                                    <a href="{{ url_for('toggle_favorite', article_id=article.id) }}" 
+                                       class="btn btn-sm btn-outline-primary">
+                                        Add to Favorites
+                                    </a>
+                                    <a href="{{ article.url }}" target="_blank" 
+                                       class="btn btn-sm btn-outline-secondary">
+                                        Read Original
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    {% endfor %}
+
+                    <h3 class="mb-4 mt-5">Favorites</h3>
+                    {% for article in favorites %}
+                        <div class="card mb-3 article-card">
+                            <div class="card-body">
+                                <h5 class="card-title">{{ article.title }}</h5>
+                                <p class="card-text">{{ article.summary }}</p>
+                                <div class="article-tags mb-2">
+                                    {% for tag in article.tags %}
+                                        <span class="badge bg-secondary me-1">{{ tag }}</span>
+                                    {% endfor %}
+                                </div>
+                                <div class="btn-group">
+                                    <button class="btn btn-sm btn-outline-primary add-tag-btn" 
+                                            data-article-id="{{ article.id }}">
+                                        Add Tag
+                                    </button>
+                                    <a href="{{ article.url }}" target="_blank" 
+                                       class="btn btn-sm btn-outline-secondary">
+                                        Read Original
+                                    </a>
+                                    <a href="{{ url_for('toggle_favorite', article_id=article.id) }}" 
+                                       class="btn btn-sm btn-outline-danger">
+                                        Remove from Favorites
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tag Modal -->
+    <div class="modal fade" id="tagModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add Tags</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="text" class="form-control" id="tag-input" 
+                           placeholder="Enter tags (comma-separated)">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-primary" id="save-tags-btn">Save Tags</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>
