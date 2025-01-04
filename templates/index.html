@@ -73,12 +73,25 @@
                     {% for article in current_articles %}
                         <div class="card mb-3 article-card">
                             <div class="card-body">
-                                <h5 class="card-title">{{ article.title }}</h5>
+                                <h2>
+                                    <a href="{{ article.url }}" target="_blank">
+                                        {{ article.headline if article.headline else article.title }}
+                                    </a>
+                                </h2>
                                 <p class="card-text">{{ article.summary }}</p>
+                                <div class="article-tags mb-2">
+                                    {% for tag in article.tags %}
+                                        <span class="badge bg-info me-1">{{ tag }}</span>
+                                    {% endfor %}
+                                </div>
                                 <div class="btn-group">
                                     <a href="{{ url_for('toggle_favorite', article_id=article.id) }}" 
-                                       class="btn btn-sm btn-outline-primary">
-                                        Add to Favorites
+                                       class="btn btn-sm {% if article.id in favorites|map(attribute='id')|list %}btn-primary{% else %}btn-outline-primary{% endif %}">
+                                        {% if article.id in favorites|map(attribute='id')|list %}
+                                            ★ Favorited
+                                        {% else %}
+                                            ☆ Add to Favorites
+                                        {% endif %}
                                     </a>
                                     <a href="{{ article.url }}" target="_blank" 
                                        class="btn btn-sm btn-outline-secondary">
@@ -91,27 +104,27 @@
 
                     <h3 class="mb-4 mt-5">Favorites</h3>
                     {% for article in favorites %}
-                        <div class="card mb-3 article-card">
+                        <div class="card mb-3 article-card favorite-card">
                             <div class="card-body">
-                                <h5 class="card-title">{{ article.title }}</h5>
+                                <h2>
+                                    <a href="{{ article.url }}" target="_blank">
+                                        {{ article.headline if article.headline else article.title }}
+                                    </a>
+                                </h2>
                                 <p class="card-text">{{ article.summary }}</p>
                                 <div class="article-tags mb-2">
                                     {% for tag in article.tags %}
-                                        <span class="badge bg-secondary me-1">{{ tag }}</span>
+                                        <span class="badge bg-info me-1">{{ tag }}</span>
                                     {% endfor %}
                                 </div>
                                 <div class="btn-group">
-                                    <button class="btn btn-sm btn-outline-primary add-tag-btn" 
-                                            data-article-id="{{ article.id }}">
-                                        Add Tag
-                                    </button>
+                                    <a href="{{ url_for('toggle_favorite', article_id=article.id) }}" 
+                                       class="btn btn-sm btn-primary">
+                                        ★ Remove from Favorites
+                                    </a>
                                     <a href="{{ article.url }}" target="_blank" 
                                        class="btn btn-sm btn-outline-secondary">
                                         Read Original
-                                    </a>
-                                    <a href="{{ url_for('toggle_favorite', article_id=article.id) }}" 
-                                       class="btn btn-sm btn-outline-danger">
-                                        Remove from Favorites
                                     </a>
                                 </div>
                             </div>

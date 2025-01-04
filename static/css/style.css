@@ -12,8 +12,23 @@ body {
     box-shadow: 0 4px 8px rgba(0,0,0,0.1);
 }
 
+.article-tags {
+    margin: 10px 0;
+}
+
 .article-tags .badge {
     cursor: pointer;
+}
+
+.badge {
+    font-size: 0.8em;
+    padding: 5px 10px;
+    border-radius: 12px;
+}
+
+.badge.bg-info {
+    background-color: #e2e8f0 !important;
+    color: #4a5568;
 }
 
 .tags-list .badge {
@@ -25,6 +40,11 @@ body {
     background-color: #0056b3;
 }
 
+.favorite-card {
+    border-left: 4px solid #3182ce;
+    background-color: #f7fafc;
+}
+
 .card {
     border: none;
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
@@ -32,4 +52,12 @@ body {
 
 .navbar {
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.btn-group {
+    gap: 5px;
+}
+
+.btn-sm {
+    padding: 0.25rem 0.75rem;
 }

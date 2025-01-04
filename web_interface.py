@@ -1,5 +1,5 @@
 from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, send_from_directory
-from rss_reader import FavoritesManager, ExportManager, TagGenerator, RSSReaderConfig, ArticleSummarizer
+from rss_reader import FavoritesManager, ExportManager, RSSReaderConfig, RSSReader
 import os
 from werkzeug.utils import secure_filename
 import json
@@ -7,6 +7,10 @@ import hashlib
 import feedparser
 import logging
 from datetime import datetime
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO,
@@ -15,11 +19,10 @@ logging.basicConfig(level=logging.INFO,
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
 
-# Initialize managers and summarizer
+# Initialize managers and reader
 favorites_manager = FavoritesManager()
 export_manager = ExportManager()
-tag_generator = TagGenerator()
-summarizer = ArticleSummarizer()
+rss_reader = RSSReader()
 
 # Load RSS feed data
 def load_rss_feeds():
@@ -33,13 +36,24 @@ def load_rss_feeds():
             logging.error(f"RSS feeds file not found at: {feed_path}")
             return feeds
 
+        # Check for API key before proceeding
+        try:
+            api_key = os.getenv('ANTHROPIC_API_KEY')
+            if not api_key:
+                logging.error("ANTHROPIC_API_KEY not found in environment variables")
+                raise ValueError("ANTHROPIC_API_KEY not set. Please set this environment variable to enable article summarization.")
+        except Exception as e:
+            logging.error(f"Error with API key: {str(e)}")
+            return [{'title': 'Configuration Error', 
+                    'url': '#',
+                    'summary': 'Please set the ANTHROPIC_API_KEY environment variable to enable article summarization.',
+                    'id': 'config_error'}]
+
         with open(feed_path, 'r') as f:
-            # Strip comments and whitespace from URLs
             feed_urls = []
             for line in f:
                 line = line.strip()
                 if line and not line.startswith('#'):
-                    # Remove any trailing comments
                     url = line.split('#')[0].strip()
                     feed_urls.append(url)
                     
@@ -59,21 +73,80 @@ def load_rss_feeds():
                     # Get the full content or summary
                     content = entry.get('content', [{'value': ''}])[0].get('value', '') or entry.get('summary', '')
                     
-                    # Generate summary using our summarizer
-                    try:
-                        summary = summarizer.summarize_article(content)
-                    except Exception as e:
-                        logging.error(f"Error summarizing article: {str(e)}")
-                        summary = "Summary not available."
-                    
+                    # Create article dictionary
                     article = {
-                        'title': entry.get('title', ''),
-                        'url': entry.get('link', ''),
-                        'summary': summary,
+                        'title': entry.get('title', 'No Title'),
+                        'url': entry.get('link', '#'),
+                        'content': content,
                         'published': entry.get('published', datetime.now().isoformat()),
                     }
+                    
+                    # Generate summary
+                    try:
+                        summary_prompt = """You are an expert at creating concise, informative summaries of articles. Your task is to summarize the following article:
+<article>
+{}
+</article>
+
+Create a summary that adheres to these guidelines:
+1. Length: Three to four sentences.
+2. Style:
+   - Use active voice
+   - Choose non-compound verbs when possible
+   - Avoid the words "content" and "creator"
+   - Use "open source" instead of "open-source"
+   - Spell out numbers (e.g., "8 billion" instead of "8B")
+   - Abbreviate U.S. and U.K. with periods; use AI without periods
+   - Use smart quotes, not straight quotes
+3. Content structure:
+   - First sentence: Explain what has happened in clear, simple language
+   - Second sentence: Identify important details relevant to AI developers
+   - Third sentence: Explain why this information matters to readers who closely follow AI news
+4. Tone: Factual, informative, and free from exaggeration, hype, or marketing speak
+5. Headline:
+   - Create a headline in sentence case
+   - Avoid repeating too many words or phrases from the summary
+
+Format your response exactly like this, with a headline followed by the summary on a new line:
+[Headline]
+[Summary]"""
+
+                        response = rss_reader.client.messages.create(
+                            model="claude-3-haiku-20240307",
+                            max_tokens=300,
+                            temperature=0.7,
+                            system=summary_prompt.format(content),
+                            messages=[{
+                                "role": "user",
+                                "content": "Please provide the summary following the guidelines above."
+                            }]
+                        )
+                        
+                        # Split response into headline and summary
+                        text = response.content[0].text.strip()
+                        lines = text.split('\n', 1)
+                        if len(lines) == 2:
+                            article['headline'] = lines[0].strip()
+                            article['summary'] = lines[1].strip()
+                        else:
+                            article['headline'] = article['title']
+                            article['summary'] = text
+                            
+                    except Exception as e:
+                        logging.error(f"Error summarizing article: {str(e)}")
+                        article['headline'] = article['title']
+                        article['summary'] = "Summary not available."
+                    
+                    # Generate tags
+                    try:
+                        article['tags'] = rss_reader.generate_tags(content)
+                    except Exception as e:
+                        logging.error(f"Error generating tags: {str(e)}")
+                        article['tags'] = []
+                    
                     article['id'] = generate_article_id(article)
                     articles.append(article)
+                    
                 logging.info(f"Successfully parsed {len(articles)} articles from {url}")
                 feeds.extend(articles)
             except Exception as e:
@@ -94,14 +167,16 @@ def index():
     # Get current RSS feed articles
     current_articles = load_rss_feeds()
     
-    # Get all favorites and available tags
+    # Get all favorites and their tags
     favorites = favorites_manager.get_favorites()
-    all_tags = favorites_manager.get_tags()
+    
+    # Get all available tags with their counts
+    tags = favorites_manager.get_tags()
     
     return render_template('index.html', 
                          current_articles=current_articles,
-                         favorites=favorites, 
-                         tags=all_tags)
+                         favorites=favorites,
+                         tags=tags)
 
 @app.route('/favorite/<article_id>')
 def toggle_favorite(article_id):

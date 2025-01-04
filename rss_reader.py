@@ -1621,6 +1621,25 @@ Provide your final output in the following format:
             logging.error(f"Error generating summary: {str(e)}")
             return "Summary not available."
 
+    def generate_tags(self, content):
+        """Generate tags for an article using Claude."""
+        try:
+            response = self.client.messages.create(
+                model="claude-3-haiku-20240307",
+                max_tokens=100,
+                temperature=0.7,
+                system="Extract specific entities from the text and return them as tags. Include:\n- Company names (e.g., 'Apple', 'Microsoft')\n- Technologies (e.g., 'ChatGPT', 'iOS 17')\n- People (e.g., 'Tim Cook', 'Satya Nadella')\n- Products (e.g., 'iPhone 15', 'Surface Pro')\nFormat: Return only the tags as a comma-separated list, with no categories or explanations.",
+                messages=[{
+                    "role": "user",
+                    "content": content
+                }]
+            )
+            tags = [tag.strip() for tag in response.content[0].text.split(',')]
+            return tags
+        except Exception as e:
+            logging.error(f"Error generating tags: {str(e)}")
+            return []
+
 class RSSReader:
     """
     Main class that handles RSS feed processing, article summarization, and clustering.
