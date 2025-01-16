@@ -28,8 +28,7 @@ import asyncio
 from typing import List, Dict, Any, Optional
 
 # Load environment variables from .env file
-env_path = os.path.expanduser('~/workspace/.env')
-load_dotenv(env_path)
+load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
 
 # Configure logging
 logging.basicConfig(
@@ -196,11 +195,10 @@ import asyncio
 from typing import List, Dict, Any, Optional
 
 # Load environment variables from .env file
-env_path = os.path.expanduser('~/workspace/.env')
-load_dotenv(env_path)
+load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
 
-if not os.path.exists(env_path):
-    logging.warning(f"No .env file found at {env_path}")
+if not os.path.exists(os.path.join(os.path.dirname(__file__), '.env')):
+    logging.warning(f"No .env file found at {os.path.join(os.path.dirname(__file__), '.env')}")
 
 # Configure logging
 logging.basicConfig(
