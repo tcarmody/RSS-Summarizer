@@ -13,7 +13,6 @@ import re
 from datetime import datetime
 from functools import wraps
 from bs4 import BeautifulSoup
-from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 from tqdm import tqdm
 from dotenv import load_dotenv
@@ -26,6 +25,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from ratelimit import limits, sleep_and_retry
 import asyncio
 from typing import List, Dict, Any, Optional
+import torch
+from collections import defaultdict
+from sklearn.cluster import AgglomerativeClustering
+from sentence_transformers import SentenceTransformer
 
 # Load environment variables from .env file
 load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
@@ -1552,72 +1555,53 @@ class ArticleSummarizer:
         
         try:
             # Generate summary using Claude
-            system_prompt = """You are an expert at creating concise, informative summaries of articles.
-Your task is to summarize the following article:
-<article>
-{text}
-</article>
-
-Create a summary that adheres to these guidelines:
-
-1. Length: Three to four sentences.
-
-2. Style:
-   - Use active voice
-   - Choose non-compound verbs when possible
-   - Avoid the words "content" and "creator"
-   - Use "open source" instead of "open-source"
-   - Spell out numbers (e.g., "8 billion" instead of "8B")
-   - Abbreviate U.S. and U.K. with periods; use AI without periods
-   - Use smart quotes, not straight quotes
-
-3. Content structure:
-   - First sentence: Explain what has happened in clear, simple language
-   - Second sentence: Identify important details relevant to AI developers
-   - Third sentence: Explain why this information matters to readers who closely follow AI news
-
-4. Tone:
-   - Factual, informative, and free from exaggeration, hype, or marketing speak
-
-5. Headline:
-   - Create a headline in sentence case
-   - Avoid repeating too many words or phrases from the summary
-
-After creating your summary, review it to ensure accuracy and remove any exaggerated language.
-Start directly with the summary content - do not include phrases like "Here is a summary" or "In summary."
-
-Provide your final output in the following format:
-[Your headline here]
-[Your summary here]"""
-
-            messages = [
-                {
-                    "role": "system",
-                    "content": system_prompt
-                },
-                {
-                    "role": "user",
-                    "content": text
-                }
-            ]
-            
-            response = rate_limited_api_call(
-                self.client,
-                messages,
-                model="claude-3-haiku-20240307",
-                max_tokens=150
+            prompt = (
+                "Summarize this article in 3-4 sentences using active voice and factual tone. "
+                "Follow this structure:\n"
+                "1. First line: Create a headline in sentence case\n"
+                "2. Then a blank line\n"
+                "3. Then the summary that:\n"
+                "- Explains what happened in simple language\n"
+                "- Identifies key details for AI developers\n"
+                "- Explains why it matters to AI industry followers\n"
+                "- Spells out numbers and uses U.S./U.K. with periods\n\n"
+                f"Article:\n{text}\n\n"
+                f"URL: {article['link']}"
             )
+
+            response = self.client.messages.create(
+                model="claude-3-haiku-20240307",
+                max_tokens=400,
+                temperature=0.3,
+                system="You are an expert AI technology journalist. Be concise and factual.",
+                messages=[{
+                    "role": "user",
+                    "content": prompt
+                }]
+            )
+
+            summary_text = response.content[0].text
             
-            summary = response.content[0].text
-            
-            # Cache the summary
-            self.summary_cache.set(text, {'summary': summary})
-            
-            return summary
-            
+            # Split into headline and summary
+            lines = summary_text.split('\n', 1)
+            if len(lines) == 2:
+                headline = lines[0].strip()
+                summary = lines[1].strip()
+            else:
+                headline = article['title']
+                summary = summary_text
+
+            return {
+                'headline': headline,
+                'summary': summary
+            }
+
         except Exception as e:
             logging.error(f"Error generating summary: {str(e)}")
-            return "Summary not available."
+            return {
+                'headline': article['title'],
+                'summary': "Summary generation failed. Please try again later."
+            }
 
     def generate_tags(self, content):
         """Generate tags for an article using Claude."""
@@ -1662,10 +1646,24 @@ class RSSReader:
         self.client = anthropic.Anthropic()
         self.batch_processor = BatchProcessor(batch_size=5)  # Process 5 API calls at a time
         
-        # Initialize sentence transformer
+        # Initialize sentence transformer and device
         self.model = None
         self.device = None
-
+        self._initialize_model()
+    
+    def _initialize_model(self):
+        """Initialize the sentence transformer model and device."""
+        try:
+            if self.model is None:
+                logging.info("Initializing sentence transformer model...")
+                self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+                self.model = SentenceTransformer('all-mpnet-base-v2')
+                self.model = self.model.to(self.device)
+                logging.info(f"Model initialized on device: {self.device}")
+        except Exception as e:
+            logging.error(f"Error initializing model: {str(e)}")
+            raise
+    
     def _load_default_feeds(self):
         """Load feed URLs from the default file."""
         feeds = []
@@ -1745,35 +1743,95 @@ class RSSReader:
                         articles = future.result()
                         if articles:
                             batch_articles.extend(articles)
-                
-                # Generate summaries for articles without them
-                for article in batch_articles:
-                    if not article.get('summary'):
-                        result = self._generate_summary(article['content'], article['title'], article['link'])
-                        article['summary'] = result
+                            logging.info(f"Added {len(articles)} articles to batch")
                 
                 all_articles.extend(batch_articles)
+                logging.info(f"Batch complete. Total articles so far: {len(all_articles)}")
                 
                 # Add delay between batches if there are more
                 if batch['current'] < batch['total']:
                     time.sleep(self.batch_delay)
             
-            # Cluster similar articles
-            start_time = time.time()
-            clusters = self._cluster_articles(all_articles) if all_articles else []
-            duration = time.time() - start_time
-            logging.info(f"Performance: cluster_similar_articles took {duration:.4f} seconds "
-                        f"(CPU: {psutil.cpu_percent()}%, Memory: {psutil.Process().memory_info().rss} bytes)")
+            logging.info(f"Total articles collected: {len(all_articles)}")
+            
+            if not all_articles:
+                logging.error("No articles collected from any feeds")
+                return None
+            
+            # First cluster the articles
+            logging.info("Clustering similar articles...")
+            clusters = self._cluster_articles(all_articles)
+            
+            if not clusters:
+                logging.error("No clusters created")
+                return None
+                
+            logging.info(f"Created {len(clusters)} clusters")
+            
+            # Now generate summaries for each cluster
+            logging.info("Generating summaries for article clusters...")
+            processed_clusters = []
+            
+            for i, cluster in enumerate(clusters, 1):
+                try:
+                    if not cluster:
+                        logging.warning(f"Empty cluster {i}, skipping")
+                        continue
+                        
+                    logging.info(f"Processing cluster {i}/{len(clusters)} with {len(cluster)} articles")
+                    
+                    if len(cluster) > 1:
+                        # For clusters with multiple articles, generate a combined summary
+                        combined_text = "\n\n".join([
+                            f"Title: {article['title']}\n{article.get('content', '')[:1000]}"
+                            for article in cluster
+                        ])
+                        
+                        logging.info(f"Generating summary for cluster {i} with {len(cluster)} articles")
+                        cluster_summary = self._generate_summary(combined_text, 
+                                                              f"Combined summary of {len(cluster)} related articles",
+                                                              cluster[0]['link'])
+                        
+                        # Add the cluster summary to each article
+                        for article in cluster:
+                            article['summary'] = cluster_summary
+                            article['cluster_size'] = len(cluster)
+                    else:
+                        # Single article
+                        article = cluster[0]
+                        if not article.get('summary'):
+                            logging.info(f"Generating summary for single article: {article['title']}")
+                            article['summary'] = self._generate_summary(
+                                article.get('content', ''),
+                                article['title'],
+                                article['link']
+                            )
+                        article['cluster_size'] = 1
+                    
+                    processed_clusters.append(cluster)
+                    logging.info(f"Successfully processed cluster {i}")
+                    
+                except Exception as cluster_error:
+                    logging.error(f"Error processing cluster {i}: {str(cluster_error)}", exc_info=True)
+                    continue
+            
+            if not processed_clusters:
+                logging.error("No clusters were successfully processed")
+                return None
+            
+            logging.info(f"Successfully processed {len(processed_clusters)} clusters")
             
             # Generate HTML output
-            if clusters:
-                output_file = self.generate_html_output(clusters)
-                return output_file
+            output_file = self.generate_html_output(processed_clusters)
+            if output_file:
+                logging.info(f"Successfully generated HTML output: {output_file}")
+            else:
+                logging.error("Failed to generate HTML output")
             
-            return None
+            return output_file
             
         except Exception as e:
-            logging.error(f"Error processing feeds: {str(e)}")
+            logging.error(f"Error processing feeds: {str(e)}", exc_info=True)
             return None
 
     def _process_feed(self, feed_url):
@@ -1803,7 +1861,11 @@ class RSSReader:
             prompt = (
                 "Summarize this article in 3-4 sentences using active voice and factual tone. "
                 "Follow this structure:\n"
-                "1. First line: Create a headline in sentence case\n"
+                "1. First line: Create a descriptive title that captures the key theme or insight. The title should:\n"
+                "   - Be 5-10 words long\n"
+                "   - Use sentence case\n"
+                "   - Focus on the main technological development, business impact, or key finding\n"
+                "   - Be specific rather than generic (e.g. 'OpenAI launches GPT-4 with enhanced reasoning' rather than 'AI company releases new model')\n"
                 "2. Then a blank line\n"
                 "3. Then the summary that:\n"
                 "- Explains what happened in simple language\n"
@@ -1854,43 +1916,65 @@ class RSSReader:
             # Log performance metrics
             start_time = time.time()
             
-            # Get embeddings for all articles
-            model = SentenceTransformer('all-MiniLM-L6-v2')
+            if not articles:
+                logging.warning("No articles to cluster")
+                return []
+                
+            logging.info(f"Clustering {len(articles)} articles")
             
-            # Extract titles for clustering
-            titles = [article.get('title', '') for article in articles]
+            # Initialize model if needed
+            if self.model is None:
+                self._initialize_model()
             
-            # Get embeddings for titles
-            embeddings = model.encode(titles, show_progress_bar=True)
+            # Combine title and first part of content for better context
+            texts = []
+            for article in articles:
+                title = article.get('title', '')
+                content = article.get('content', '')[:500]  # First 500 chars of content
+                combined_text = f"{title} {content}".strip()
+                texts.append(combined_text)
+                logging.debug(f"Processing article for clustering: {title}")
             
-            # Cluster using DBSCAN
-            clustering = DBSCAN(eps=0.3, min_samples=1).fit(embeddings)
+            # Get embeddings with progress bar
+            logging.info("Generating embeddings for articles...")
+            embeddings = self.model.encode(
+                texts,
+                show_progress_bar=True,
+                batch_size=32,
+                normalize_embeddings=True
+            )
+            
+            # Use Agglomerative Clustering
+            logging.info("Clustering articles...")
+            clustering = AgglomerativeClustering(
+                n_clusters=None,
+                distance_threshold=0.5,  # Adjust based on testing
+                metric='cosine',
+                linkage='average'
+            ).fit(embeddings)
             
             # Group articles by cluster
-            clusters = {}
+            clusters = defaultdict(list)
             for idx, label in enumerate(clustering.labels_):
-                if label not in clusters:
-                    clusters[label] = []
                 clusters[label].append(articles[idx])
-                
-            # Convert to list of clusters
+            
+            # Convert to list and sort by size
             clustered_articles = list(clusters.values())
+            clustered_articles.sort(key=len, reverse=True)
             
-            # Log performance metrics
-            end_time = time.time()
-            duration = end_time - start_time
-            process = psutil.Process()
-            cpu_percent = process.cpu_percent()
-            memory_info = process.memory_info().rss
-            
-            logging.info(f"Performance: cluster_similar_articles took {duration:.4f} seconds "
-                        f"(CPU: {cpu_percent}%, Memory: {memory_info} bytes)")
+            # Log clustering results
+            logging.info(f"Created {len(clustered_articles)} clusters:")
+            for i, cluster in enumerate(clustered_articles):
+                titles = [a.get('title', 'No title') for a in cluster]
+                logging.info(f"Cluster {i}: {len(cluster)} articles")
+                logging.info(f"Titles: {titles}")
             
             return clustered_articles
             
         except Exception as e:
-            logging.error(f"Error clustering articles: {str(e)}")
-            return []
+            logging.error(f"Error clustering articles: {str(e)}", exc_info=True)
+            # Fallback: return each article in its own cluster
+            return [[article] for article in articles]
 
     def _get_feed_batches(self):
         """Generate batches of feeds to process."""
@@ -1914,131 +1998,145 @@ class RSSReader:
             }
 
     def generate_html_output(self, clusters):
-        """
-        Generate HTML output from the processed articles.
-        
-        Args:
-            clusters (list): List of article clusters
-            
-        Returns:
-            str: Path to the generated HTML file
-        """
+        """Generate HTML output from the processed articles."""
         try:
-            # Create output directory if it doesn't exist
-            output_dir = os.path.join(os.getcwd(), 'output')
-            os.makedirs(output_dir, exist_ok=True)
-            
-            # Generate timestamp for filename
+            if not clusters:
+                logging.error("No clusters provided to generate_html_output")
+                return None
+
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_dir = os.path.join(os.path.dirname(__file__), 'output')
+            os.makedirs(output_dir, exist_ok=True)
             output_file = os.path.join(output_dir, f'rss_summary_{timestamp}.html')
             
-            # Generate content for each cluster
-            content = ""
-            for cluster in clusters:
-                content += '<div class="cluster">'
-                for article in cluster:
-                    title = article.get('title', 'No Title')
-                    link = article.get('link', '#')
-                    summary = article.get('summary', {})
-                    if isinstance(summary, dict):
-                        headline = summary.get('headline', '')
-                        summary_text = summary.get('summary', '')
-                    else:
-                        headline = ''
-                        summary_text = str(summary)
-                    published = article.get('published', 'Unknown date')
-                    source = article.get('feed_source', 'Unknown source')
-                    
-                    content += f'''
-        <div class="article">
-            <h2 class="title"><a href="{link}" target="_blank">{title}</a></h2>
-            <div class="metadata">
-                Published: {published}<br>
-                Source: {source}
-            </div>
-            <div class="summary">
-                <h3>{headline}</h3>
-                <p>{summary_text}</p>
-            </div>
-        </div>'''
-                content += '\n    </div>'
+            logging.info(f"Starting HTML generation for {len(clusters)} clusters")
+            html_content = []
             
-            # HTML template
-            html = f'''<!DOCTYPE html>
+            for i, cluster in enumerate(clusters, 1):
+                try:
+                    if not cluster:  # Skip empty clusters
+                        logging.warning(f"Skipping empty cluster {i}")
+                        continue
+                        
+                    logging.info(f"Processing cluster {i}/{len(clusters)} with {len(cluster)} articles")
+                    
+                    if len(cluster) > 1:
+                        # Multiple articles in cluster
+                        html_content.append('<div class="cluster">')
+                        
+                        # Get the cluster summary and headline
+                        first_article = cluster[0]
+                        if first_article and isinstance(first_article, dict):
+                            summary = first_article.get('summary', {})
+                            if summary:
+                                # Use the generated headline as the cluster title
+                                headline = summary.get('headline', f'Cluster of {len(cluster)} Related Articles')
+                                html_content.append(f'<h2>{headline}</h2>')
+                                
+                                html_content.append('<div class="cluster-summary">')
+                                summary_text = summary.get('summary', '') if isinstance(summary, dict) else str(summary)
+                                html_content.append(f'<p>{summary_text}</p>')
+                                html_content.append('</div>')
+                        else:
+                            html_content.append(f'<h2>Cluster of {len(cluster)} Related Articles</h2>')
+                        
+                        # Add individual articles
+                        for article in cluster:
+                            if not isinstance(article, dict):
+                                logging.warning(f"Skipping invalid article in cluster {i}: {type(article)}")
+                                continue
+                                
+                            html_content.append('<div class="article">')
+                            title = article.get('title', 'Untitled')
+                            link = article.get('link', '#')
+                            source = article.get('feed_source', 'Unknown source')
+                            published = article.get('published', 'Unknown date')
+                            
+                            html_content.append(f'<h3><a href="{link}">{title}</a></h3>')
+                            html_content.append(f'<p class="meta">Source: {source} | Published: {published}</p>')
+                            html_content.append('</div>')
+                        html_content.append('</div>')
+                    else:
+                        # Single article
+                        article = cluster[0]
+                        if not isinstance(article, dict):
+                            logging.warning(f"Skipping invalid single article: {type(article)}")
+                            continue
+                            
+                        html_content.append('<div class="article">')
+                        title = article.get('title', 'Untitled')
+                        link = article.get('link', '#')
+                        source = article.get('feed_source', 'Unknown source')
+                        published = article.get('published', 'Unknown date')
+                        
+                        html_content.append(f'<h2><a href="{link}">{title}</a></h2>')
+                        html_content.append(f'<p class="meta">Source: {source} | Published: {published}</p>')
+                        
+                        summary = article.get('summary', {})
+                        if summary:
+                            html_content.append('<div class="summary">')
+                            summary_text = summary.get('summary', '') if isinstance(summary, dict) else str(summary)
+                            html_content.append(f'<p>{summary_text}</p>')
+                            html_content.append('</div>')
+                        html_content.append('</div>')
+                        
+                except Exception as cluster_error:
+                    logging.error(f"Error processing cluster {i}: {str(cluster_error)}", exc_info=True)
+                    continue
+            
+            if not html_content:
+                logging.error("No HTML content generated")
+                return None
+                
+            logging.info(f"Generated {len(html_content)} HTML content blocks")
+            
+            # HTML template without indentation to avoid formatting issues
+            html_template = r'''<!DOCTYPE html>
 <html>
 <head>
-    <title>RSS Feed Summary</title>
-    <style>
-        body {{
-            font-family: Arial, sans-serif;
-            line-height: 1.6;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
-            background-color: #f5f5f5;
-        }}
-        .article {{
-            background-color: white;
-            padding: 20px;
-            margin-bottom: 20px;
-            border-radius: 5px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-        }}
-        .title {{
-            color: #2c3e50;
-            margin-bottom: 10px;
-        }}
-        .summary {{
-            color: #34495e;
-            margin: 15px 0;
-        }}
-        .metadata {{
-            color: #7f8c8d;
-            font-size: 0.9em;
-            margin-top: 10px;
-        }}
-        .cluster {{
-            border-left: 5px solid #3498db;
-            padding-left: 15px;
-            margin-bottom: 30px;
-        }}
-        a {{
-            color: #3498db;
-            text-decoration: none;
-        }}
-        a:hover {{
-            text-decoration: underline;
-        }}
-        h1 {{
-            color: #2c3e50;
-            text-align: center;
-            margin-bottom: 30px;
-        }}
-        .timestamp {{
-            text-align: center;
-            color: #7f8c8d;
-            margin-bottom: 30px;
-        }}
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RSS Feed Summary</title>
+<style>
+body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; max-width: 1200px; margin: 0 auto; padding: 20px; background: #f5f5f5; }}
+.cluster {{ background: white; border-radius: 8px; padding: 20px; margin-bottom: 30px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
+.cluster > h2 {{ color: #2c5282; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px; margin-top: 0; }}
+.cluster-summary {{ background: #f8fafc; border-left: 4px solid #4299e1; padding: 15px; margin: 15px 0; }}
+.article {{ background: white; border-radius: 8px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
+.article h2, .article h3 {{ margin-top: 0; color: #2d3748; }}
+.article a {{ color: #2b6cb0; text-decoration: none; }}
+.article a:hover {{ text-decoration: underline; }}
+.meta {{ font-size: 0.9em; color: #718096; margin-bottom: 10px; }}
+.summary {{ background: #f8fafc; border-left: 4px solid #4299e1; padding: 15px; margin-top: 15px; }}
+@media (max-width: 768px) {{ body {{ padding: 10px; }} .article, .cluster {{ padding: 15px; }} }}
+</style>
 </head>
 <body>
-    <h1>RSS Feed Summary</h1>
-    <div class="timestamp">Generated on: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</div>
-    <div class="content">
+<h1>RSS Feed Summary - {timestamp}</h1>
 {content}
-    </div>
 </body>
 </html>'''
             
-            # Write HTML file
-            with open(output_file, 'w', encoding='utf-8') as f:
-                f.write(html)
-            
-            logging.info(f"✅ Output written to {output_file}")
-            return output_file
+            try:
+                # Write the HTML file
+                final_html = html_template.format(
+                    timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    content='\n'.join(html_content)
+                )
+                
+                with open(output_file, 'w', encoding='utf-8') as f:
+                    f.write(final_html)
+                    logging.info(f"Wrote {len(final_html)} bytes to HTML file")
+                
+                logging.info(f"✅ Output written to {output_file}")
+                return output_file
+                
+            except Exception as write_error:
+                logging.error(f"Error writing HTML file: {str(write_error)}", exc_info=True)
+                return None
             
         except Exception as e:
-            logging.error(f"Error generating HTML output: {str(e)}")
+            logging.error(f"Error in generate_html_output: {str(e)}", exc_info=True)
             return None
 
 def test_readwise_token():
