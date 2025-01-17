@@ -1,167 +1,6 @@
 import os
 import sys
 import time
-import json
-import logging
-import feedparser
-import psutil
-import anthropic
-import requests
-import traceback
-import html
-import re
-from datetime import datetime
-from functools import wraps
-from bs4 import BeautifulSoup
-from sklearn.metrics.pairwise import cosine_similarity
-from tqdm import tqdm
-from dotenv import load_dotenv
-from urllib.parse import urlparse
-from sklearn.cluster import DBSCAN  # Import DBSCAN for clustering
-import concurrent.futures
-from requests.adapters import HTTPAdapter
-from requests.packages.urllib3.util.retry import Retry
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from ratelimit import limits, sleep_and_retry
-import asyncio
-from typing import List, Dict, Any, Optional
-import torch
-from collections import defaultdict
-from sklearn.cluster import AgglomerativeClustering
-from sentence_transformers import SentenceTransformer
-
-# Load environment variables from .env file
-load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s: %(message)s'
-)
-
-def create_session():
-    """Create a requests session with retry strategy"""
-    session = requests.Session()
-    retry_strategy = Retry(
-        total=3,
-        backoff_factor=1,
-        status_forcelist=[429, 500, 502, 503, 504],
-    )
-    adapter = HTTPAdapter(max_retries=retry_strategy, pool_connections=10, pool_maxsize=10)
-    session.mount("http://", adapter)
-    session.mount("https://", adapter)
-    return session
-
-def performance_logger(func):
-    """Decorator to log performance metrics of functions."""
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        start_time = time.time()
-        cpu_start = time.process_time()
-        mem_start = psutil.Process().memory_info().rss
-
-        result = func(*args, **kwargs)
-
-        elapsed = time.time() - start_time
-        cpu_percent = (time.process_time() - cpu_start) / elapsed * 100
-        mem_used = psutil.Process().memory_info().rss - mem_start
-
-        logging.info(f"Performance: {func.__name__} took {elapsed:.4f} seconds (CPU: {cpu_percent:.1f}%, Memory: {mem_used} bytes)")
-
-        return result
-    return wrapper
-
-# Rate limit for Anthropic API (5 requests per second)
-CALLS_PER_SECOND = 5
-ANTHROPIC_RATE_LIMIT = limits(calls=CALLS_PER_SECOND, period=1)
-
-@sleep_and_retry
-@ANTHROPIC_RATE_LIMIT
-def rate_limited_api_call(client: anthropic.Anthropic, messages: List[Dict[str, str]], **kwargs) -> Any:
-    """Make a rate-limited call to the Anthropic API"""
-    return client.messages.create(
-        messages=messages,
-        **kwargs
-    )
-
-class BatchProcessor:
-    """Process items in batches with rate limiting."""
-
-    def __init__(self, batch_size=5, requests_per_second=5):
-        self.batch_size = batch_size
-        self.delay = 1.0 / requests_per_second  # Time between requests
-        self.queue = []
-        self.results = []
-        self.last_request_time = 0
-
-    def add(self, item):
-        """Add an item to the processing queue."""
-        self.queue.append(item)
-        if len(self.queue) >= self.batch_size:
-            self._process_batch()
-
-    def _process_batch(self):
-        """Process a batch of items with rate limiting."""
-        if not self.queue:
-            return
-
-        with ThreadPoolExecutor(max_workers=self.batch_size) as executor:
-            futures = []
-            for item in self.queue[:self.batch_size]:
-                # Ensure rate limiting
-                now = time.time()
-                time_since_last = now - self.last_request_time
-                if time_since_last < self.delay:
-                    time.sleep(self.delay - time_since_last)
-
-                future = executor.submit(
-                    item['func'],
-                    *item['args'],
-                    **item['kwargs']
-                )
-                futures.append(future)
-                self.last_request_time = time.time()
-
-            # Wait for all futures to complete
-            for future in futures:
-                try:
-                    result = future.result()
-                    if result:
-                        self.results.append(result)
-                except Exception as e:
-                    logging.error(f"Error in batch processing: {str(e)}")
-
-        # Remove processed items
-        self.queue = self.queue[self.batch_size:]
-
-    def get_results(self):
-        """Process remaining items and return all results."""
-        while self.queue:
-            self._process_batch()
-        return self.results
-
-"""
-RSS Reader with AI-Powered Summarization and Article Clustering
-
-A sophisticated RSS feed reader that combines AI-powered summarization using Claude 3,
-efficient caching, and intelligent article clustering. Key features include:
-
-- Claude 3 Haiku integration for high-quality article summarization
-- Efficient caching system for feeds and summaries
-- Semantic clustering of related articles using SentenceTransformer
-- Export capabilities (HTML, PDF, Email)
-- Readwise integration for saving articles
-- Advanced content filtering (sponsored content, crypto)
-- Smart rate limiting and batch processing
-- Comprehensive logging and performance tracking
-
-Updated: 2024-01-02
-"""
-
-import os
-import re
-import json
-import time
 import math
 import logging
 import psutil
@@ -196,6 +35,12 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from ratelimit import limits, sleep_and_retry
 import asyncio
 from typing import List, Dict, Any, Optional
+import torch
+from collections import defaultdict
+from sklearn.cluster import AgglomerativeClustering
+import json
+import re
+import anthropic
 
 # Load environment variables from .env file
 load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
@@ -550,6 +395,113 @@ class ArticleSummarizer:
             logging.error(f"Error generating tags: {str(e)}")
             return []
 
+
+def create_session():
+    """Create a requests session with retry strategy"""
+    session = requests.Session()
+    retry_strategy = Retry(
+        total=3,
+        backoff_factor=1,
+        status_forcelist=[429, 500, 502, 503, 504],
+    )
+    adapter = HTTPAdapter(max_retries=retry_strategy, pool_connections=10, pool_maxsize=10)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    return session
+
+
+def performance_logger(func):
+    """Decorator to log performance metrics of functions."""
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        start_time = time.time()
+        cpu_start = time.process_time()
+        mem_start = psutil.Process().memory_info().rss
+
+        result = func(*args, **kwargs)
+
+        elapsed = time.time() - start_time
+        cpu_percent = (time.process_time() - cpu_start) / elapsed * 100
+        mem_used = psutil.Process().memory_info().rss - mem_start
+
+        logging.info(f"Performance: {func.__name__} took {elapsed:.4f} seconds (CPU: {cpu_percent:.1f}%, Memory: {mem_used} bytes)")
+
+        return result
+    return wrapper
+
+
+# Rate limit for Anthropic API (5 requests per second)
+CALLS_PER_SECOND = 5
+ANTHROPIC_RATE_LIMIT = limits(calls=CALLS_PER_SECOND, period=1)
+
+
+@sleep_and_retry
+@ANTHROPIC_RATE_LIMIT
+def rate_limited_api_call(client: anthropic.Anthropic, messages: List[Dict[str, str]], **kwargs) -> Any:
+    """Make a rate-limited call to the Anthropic API"""
+    return client.messages.create(
+        messages=messages,
+        **kwargs
+    )
+
+
+class BatchProcessor:
+    """Process items in batches with rate limiting."""
+
+    def __init__(self, batch_size=5, requests_per_second=5):
+        self.batch_size = batch_size
+        self.delay = 1.0 / requests_per_second  # Time between requests
+        self.queue = []
+        self.results = []
+        self.last_request_time = 0
+
+    def add(self, item):
+        """Add an item to the processing queue."""
+        self.queue.append(item)
+        if len(self.queue) >= self.batch_size:
+            self._process_batch()
+
+    def _process_batch(self):
+        """Process a batch of items with rate limiting."""
+        if not self.queue:
+            return
+
+        with ThreadPoolExecutor(max_workers=self.batch_size) as executor:
+            futures = []
+            for item in self.queue[:self.batch_size]:
+                # Ensure rate limiting
+                now = time.time()
+                time_since_last = now - self.last_request_time
+                if time_since_last < self.delay:
+                    time.sleep(self.delay - time_since_last)
+
+                future = executor.submit(
+                    item['func'],
+                    *item['args'],
+                    **item['kwargs']
+                )
+                futures.append(future)
+                self.last_request_time = time.time()
+
+            # Wait for all futures to complete
+            for future in futures:
+                try:
+                    result = future.result()
+                    if result:
+                        self.results.append(result)
+                except Exception as e:
+                    logging.error(f"Error in batch processing: {str(e)}")
+
+        # Remove processed items
+        self.queue = self.queue[self.batch_size:]
+
+    def get_results(self):
+        """Process remaining items and return all results."""
+        while self.queue:
+            self._process_batch()
+        return self.results
+
+
 class RSSReader:
     """
     Main class that handles RSS feed processing, article summarization, and clustering.
@@ -596,7 +548,7 @@ class RSSReader:
         """Load feed URLs from the default file."""
         feeds = []
         try:
-            with open('rss_test.txt', 'r') as f:
+            with open('rss_feeds.txt', 'r') as f:
                 for line in f:
                     url = line.strip()
                     if url and not url.startswith('#'):
@@ -855,17 +807,46 @@ class RSSReader:
 
             logging.info(f"Clustering {len(articles)} articles")
 
+            # Filter articles by date
+            current_time = datetime.strptime("2025-01-17T10:29:11-05:00", "%Y-%m-%dT%H:%M:%S%z")
+            two_weeks_ago = current_time - timedelta(days=14)
+            
+            recent_articles = []
+            for article in articles:
+                try:
+                    article_date = datetime.strptime(article.get('published', ''), '%a, %d %b %Y %H:%M:%S %z')
+                    if article_date >= two_weeks_ago:
+                        recent_articles.append(article)
+                except (ValueError, TypeError):
+                    # If date parsing fails, try alternate format
+                    try:
+                        article_date = datetime.strptime(article.get('published', ''), '%Y-%m-%dT%H:%M:%S%z')
+                        if article_date >= two_weeks_ago:
+                            recent_articles.append(article)
+                    except (ValueError, TypeError):
+                        logging.warning(f"Could not parse date for article: {article.get('title')}. Using current date.")
+                        recent_articles.append(article)  # Include articles with unparseable dates
+            
+            if not recent_articles:
+                logging.warning("No recent articles to cluster")
+                return []
+
+            logging.info(f"Found {len(recent_articles)} articles from the last 2 weeks")
+
             # Initialize model if needed
             if self.model is None:
                 self._initialize_model()
 
             # Combine title and first part of content for better context
             texts = []
-            for article in articles:
+            sources = []
+            for article in recent_articles:
                 title = article.get('title', '')
                 content = article.get('content', '')[:500]  # First 500 chars of content
+                source = article.get('feed_source', '')
                 combined_text = f"{title} {content}".strip()
                 texts.append(combined_text)
+                sources.append(source)
                 logging.debug(f"Processing article for clustering: {title}")
 
             # Get embeddings with progress bar
@@ -877,32 +858,56 @@ class RSSReader:
                 normalize_embeddings=True
             )
 
-            # Use Agglomerative Clustering
+            # Use Agglomerative Clustering with adjusted threshold
             logging.info("Clustering articles...")
             clustering = AgglomerativeClustering(
                 n_clusters=None,
-                distance_threshold=0.5,  # Adjust based on testing
+                distance_threshold=0.33,  # Adjusted threshold as requested
                 metric='cosine',
-                linkage='average'
+                linkage='complete'  # Use complete linkage for stricter clustering
             ).fit(embeddings)
 
-            # Group articles by cluster
+            # Group articles by cluster, considering source
             clusters = defaultdict(list)
             for idx, label in enumerate(clustering.labels_):
-                clusters[label].append(articles[idx])
+                # Create a unique cluster key that includes the source
+                source_key = f"{label}_{sources[idx]}"
+                clusters[source_key].append(recent_articles[idx])
 
-            # Convert to list and sort by size
-            clustered_articles = list(clusters.values())
-            clustered_articles.sort(key=len, reverse=True)
+            # Merge small clusters from same source if they're similar
+            merged_clusters = []
+            processed_keys = set()
+
+            for key1 in clusters:
+                if key1 in processed_keys:
+                    continue
+
+                label1 = int(key1.split('_')[0])
+                current_cluster = clusters[key1]
+                processed_keys.add(key1)
+
+                # Look for similar clusters to merge
+                for key2 in clusters:
+                    if key2 in processed_keys:
+                        continue
+
+                    label2 = int(key2.split('_')[0])
+                    # Only merge if they're from different sources
+                    if label1 == label2:
+                        current_cluster.extend(clusters[key2])
+                        processed_keys.add(key2)
+
+                if len(current_cluster) > 0:  # Only add non-empty clusters
+                    merged_clusters.append(current_cluster)
 
             # Log clustering results
-            logging.info(f"Created {len(clustered_articles)} clusters:")
-            for i, cluster in enumerate(clustered_articles):
+            logging.info(f"Created {len(merged_clusters)} clusters:")
+            for i, cluster in enumerate(merged_clusters):
                 titles = [a.get('title', 'No title') for a in cluster]
                 logging.info(f"Cluster {i}: {len(cluster)} articles")
                 logging.info(f"Titles: {titles}")
 
-            return clustered_articles
+            return merged_clusters
 
         except Exception as e:
             logging.error(f"Error clustering articles: {str(e)}", exc_info=True)
