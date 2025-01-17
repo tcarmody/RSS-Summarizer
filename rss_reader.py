@@ -657,7 +657,7 @@ class RSSReader:
 
         return processed_clusters
 
-    def _parse_entry(self, entry):
+    def _parse_entry(self, entry, feed_title):
         """Parse a feed entry into an article."""
         try:
             # Extract content
@@ -692,7 +692,7 @@ class RSSReader:
                 'link': getattr(entry, 'link', '#'),
                 'published': getattr(entry, 'published', 'Unknown date'),
                 'content': content,
-                'feed_source': getattr(entry, 'feed', {}).get('title', 'Unknown Source')
+                'feed_source': feed_title
             }
 
         except Exception as e:
@@ -773,10 +773,11 @@ class RSSReader:
             articles = []
 
             if feed.entries:
+                feed_title = feed.feed.get('title', feed_url)
                 logging.info(f"📰 Found {len(feed.entries)} articles in feed: {feed_url}")
 
                 for entry in feed.entries[:self.batch_size]:
-                    article = self._parse_entry(entry)
+                    article = self._parse_entry(entry, feed_title)
                     if article:
                         articles.append(article)
 
