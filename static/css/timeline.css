@@ -1,0 +1,238 @@
+:root {
+    /* Light theme */
+    --primary-color: #2c5282;
+    --secondary-color: #4299e1;
+    --background-color: #f7fafc;
+    --timeline-bg: #ffffff;
+    --text-color: #2d3748;
+    --border-color: #e2e8f0;
+    --hover-bg: #edf2f7;
+    --timeline-width: 320px;
+    --item-hover: #f7fafc;
+    --welcome-bg: #ffffff;
+}
+
+[data-theme="dark"] {
+    --primary-color: #90cdf4;
+    --secondary-color: #4299e1;
+    --background-color: #1a202c;
+    --timeline-bg: #2d3748;
+    --text-color: #e2e8f0;
+    --border-color: #4a5568;
+    --hover-bg: #4a5568;
+    --item-hover: #3a4556;
+    --welcome-bg: #2d3748;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+    line-height: 1.6;
+    margin: 0;
+    padding: 0;
+    background-color: var(--background-color);
+    color: var(--text-color);
+    height: 100vh;
+    overflow: hidden;
+    transition: background-color 0.3s ease;
+}
+
+.app-container {
+    display: flex;
+    height: 100vh;
+}
+
+.timeline-container {
+    width: var(--timeline-width);
+    border-right: 1px solid var(--border-color);
+    background-color: var(--timeline-bg);
+    display: flex;
+    flex-direction: column;
+    transition: background-color 0.3s ease;
+}
+
+.timeline-header {
+    padding: 1rem;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.timeline-header h1 {
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: var(--primary-color);
+}
+
+.theme-toggle {
+    background: none;
+    border: none;
+    color: var(--text-color);
+    cursor: pointer;
+    padding: 0.5rem;
+    font-size: 1.2rem;
+    border-radius: 50%;
+    transition: background-color 0.2s;
+}
+
+.theme-toggle:hover {
+    background-color: var(--hover-bg);
+}
+
+.timeline {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1rem;
+}
+
+.timeline-item {
+    padding: 1rem;
+    border-radius: 8px;
+    margin-bottom: 0.75rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: 1px solid var(--border-color);
+}
+
+.timeline-item:hover {
+    background-color: var(--item-hover);
+    transform: translateX(4px);
+}
+
+.timeline-item.active {
+    background-color: var(--secondary-color);
+    color: white;
+    border-color: var(--secondary-color);
+}
+
+.timeline-item h3 {
+    margin: 0 0 0.5rem 0;
+    font-size: 1rem;
+    font-weight: 600;
+}
+
+.timeline-item .filename {
+    font-size: 0.875rem;
+    color: var(--text-color);
+    opacity: 0.8;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.timeline-item.active .filename {
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.content-container {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+    background-color: var(--background-color);
+    transition: background-color 0.3s ease;
+}
+
+.content-view {
+    height: 100%;
+    position: relative;
+}
+
+.content-view iframe {
+    width: 100%;
+    height: 100%;
+    border: none;
+    background: var(--welcome-bg);
+    transition: background-color 0.3s ease;
+}
+
+.welcome-message {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    color: var(--text-color);
+}
+
+.welcome-icon {
+    font-size: 4rem;
+    color: var(--primary-color);
+    margin-bottom: 1rem;
+}
+
+.welcome-message h2 {
+    margin: 1rem 0;
+    font-weight: 600;
+}
+
+.welcome-message p {
+    opacity: 0.8;
+}
+
+.loading {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: var(--text-color);
+    font-size: 1.1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.loading::after {
+    content: '';
+    width: 1rem;
+    height: 1rem;
+    border: 2px solid var(--text-color);
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+    width: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--background-color);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--secondary-color);
+}
+
+@media (max-width: 768px) {
+    .timeline-container {
+        width: 100%;
+        max-width: 100%;
+    }
+    
+    .app-container {
+        flex-direction: column;
+    }
+    
+    .content-container {
+        display: none;
+    }
+    
+    .timeline-container.collapsed {
+        display: none;
+    }
+    
+    .content-container.expanded {
+        display: block;
+    }
+}
