@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RSS Feed Summary</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+<style>
+:root[data-theme="light"] {
+    --background-color: #f5f5f5;
+    --text-color: #1d1d1f;
+    --secondary-text: #86868b;
+    --accent-color: #2c2c2e;
+    --border-color: #e5e5e7;
+    --hover-color: #fafafa;
+    --badge-color: #f2f2f4;
+}
+
+:root[data-theme="dark"] {
+    --background-color: #1d1d1f;
+    --text-color: #f5f5f7;
+    --secondary-text: #86868b;
+    --accent-color: #f5f5f7;
+    --border-color: #2c2c2e;
+    --hover-color: #2c2c2e;
+    --badge-color: #363638;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+    line-height: 1.5;
+    margin: 0;
+    padding: 0;
+    background: var(--background-color);
+    color: var(--text-color);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+.container {
+    display: flex;
+    min-height: 100vh;
+}
+
+.agenda {
+    width: 340px;
+    background: var(--background-color);
+    padding: 40px 30px;
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    overflow-y: auto;
+    border-right: 1px solid var(--border-color);
+}
+
+.agenda h2 {
+    font-size: 24px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    color: var(--text-color);
+    margin: 0 0 30px 0;
+}
+
+.agenda-item {
+    padding: 12px 16px;
+    margin: 4px -16px;
+    border-radius: 12px;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    border: 1px solid transparent;
+    position: relative;
+    overflow: hidden;
+}
+
+.agenda-item::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 3px;
+    height: 100%;
+    background: var(--text-color);
+    opacity: 0;
+    transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.agenda-item:hover {
+    background: var(--hover-color);
+    border-color: var(--border-color);
+    transform: translateX(4px);
+}
+
+.agenda-item:hover::before {
+    opacity: 1;
+}
+
+.agenda-item a {
+    color: var(--text-color);
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 15px;
+    line-height: 1.4;
+    letter-spacing: -0.01em;
+    z-index: 1;
+    position: relative;
+}
+
+.agenda-title {
+    flex: 1;
+    margin-right: 12px;
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.article-count {
+    background: var(--badge-color);
+    color: var(--secondary-text);
+    font-size: 13px;
+    font-weight: 500;
+    padding: 2px 10px;
+    border-radius: 12px;
+    min-width: 16px;
+    text-align: center;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.agenda-item:hover .article-count {
+    background: var(--text-color);
+    color: var(--background-color);
+    transform: scale(1.05);
+}
+
+.agenda-item:hover .agenda-title {
+    transform: translateX(8px);
+}
+
+.agenda-item.active {
+    background: var(--hover-color);
+    border-color: var(--text-color);
+}
+
+.agenda-item.active::before {
+    opacity: 1;
+}
+
+.agenda-item.active .article-count {
+    background: var(--text-color);
+    color: var(--background-color);
+}
+
+.content {
+    flex: 1;
+    margin-left: 400px;
+    padding: 40px;
+    max-width: 680px;
+}
+
+.content h1 {
+    font-size: 32px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    margin: 0 0 40px 0;
+    color: var(--text-color);
+}
+
+.cluster {
+    background: var(--background-color);
+    border-radius: 16px;
+    padding: 32px;
+    margin-bottom: 32px;
+    border: 1px solid var(--border-color);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.cluster:hover {
+    border-color: var(--text-color);
+}
+
+.cluster > h2 {
+    font-size: 24px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    margin: 0 0 24px 0;
+    color: var(--text-color);
+}
+
+.cluster-summary {
+    font-size: 15px;
+    line-height: 1.6;
+    color: var(--secondary-text);
+    margin: 24px 0;
+    padding: 24px;
+    background: var(--hover-color);
+    border-radius: 12px;
+}
+
+.article {
+    padding: 24px 0;
+    border-top: 1px solid var(--border-color);
+}
+
+.article:first-child {
+    border-top: none;
+    padding-top: 0;
+}
+
+.article h3 {
+    font-size: 17px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    margin: 0 0 8px 0;
+}
+
+.article a {
+    color: var(--text-color);
+    text-decoration: none;
+}
+
+.article a:hover {
+    text-decoration: underline;
+}
+
+.meta {
+    font-size: 13px;
+    color: var(--secondary-text);
+    margin: 8px 0;
+}
+
+.summary {
+    font-size: 15px;
+    line-height: 1.6;
+    color: var(--secondary-text);
+    margin: 16px 0;
+    padding: 20px;
+    background: var(--hover-color);
+    border-radius: 12px;
+}
+
+.theme-toggle {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: var(--badge-color);
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+    width: 40px;
+    height: 40px;
+    border-radius: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 1000;
+}
+
+.theme-toggle:hover {
+    background: var(--hover-color);
+}
+
+.theme-toggle i {
+    font-size: 18px;
+}
+
+@media (max-width: 768px) {
+    .container {
+        flex-direction: column;
+    }
+    .agenda {
+        position: relative;
+        width: auto;
+        padding: 24px 20px;
+    }
+    .content {
+        margin-left: 0;
+        padding: 24px 20px;
+    }
+    .cluster {
+        padding: 24px;
+    }
+    .article-count {
+        font-size: 12px;
+        padding: 2px 8px;
+    }
+    .theme-toggle {
+        top: 12px;
+        right: 12px;
+    }
+}
+</style>
+</head>
+<body>
+<button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">
+    <i class="fas fa-moon"></i>
+</button>
+
+<div class="container">
+    <div class="agenda">
+        <h2>Summary</h2>
+        {% for cluster in clusters %}
+            <div class="agenda-item">
+                <a href="#cluster-{{ loop.index }}">
+                    <span class="agenda-title">
+                    {% if cluster|length > 1 %}
+                        {% set first_article = cluster[0] %}
+                        {% set summary = first_article.get('summary', {}) %}
+                        {% if summary %}
+                            {{ summary.get('headline', 'Cluster of ' ~ cluster|length ~ ' Related Articles') }}
+                        {% else %}
+                            Cluster of {{ cluster|length }} Related Articles
+                        {% endif %}
+                    {% else %}
+                        {% set article = cluster[0] %}
+                        {% set summary = article.get('summary', {}) %}
+                        {{ summary.get('headline', article.get('title', 'Untitled')) }}
+                    {% endif %}
+                    </span>
+                    <span class="article-count">{{ cluster|length }}</span>
+                </a>
+            </div>
+        {% endfor %}
+    </div>
+
+    <div class="content">
+        <h1>RSS Feed Summary - {{ timestamp }}</h1>
+        {% for cluster in clusters %}
+            <div class="cluster" id="cluster-{{ loop.index }}">
+                {% if cluster|length > 1 %}
+                    {% set first_article = cluster[0] %}
+                    {% set summary = first_article.get('summary', {}) %}
+                    <h2>
+                        {% if summary %}
+                            {{ summary.get('headline', 'Cluster of ' ~ cluster|length ~ ' Related Articles') }}
+                        {% else %}
+                            Cluster of {{ cluster|length }} Related Articles
+                        {% endif %}
+                    </h2>
+                    {% if summary %}
+                        <div class="cluster-summary">
+                            {{ summary.get('summary', '') }}
+                        </div>
+                    {% endif %}
+                    {% for article in cluster %}
+                        <div class="article">
+                            <h3><a href="{{ article.get('link', '#') }}" target="_blank">{{ article.get('title', 'Untitled') }}</a></h3>
+                            <p class="meta">
+                                Source: {{ article.get('source') or article.get('feed_source', 'Unknown source') }} |
+                                Published: {{ article.get('published', 'Unknown date') }}
+                            </p>
+                        </div>
+                    {% endfor %}
+                {% else %}
+                    {% set article = cluster[0] %}
+                    {% set summary = article.get('summary', {}) %}
+                    <h2>{{ summary.get('headline', article.get('title', 'Untitled')) }}</h2>
+                    <div class="article">
+                        <h3><a href="{{ article.get('link', '#') }}" target="_blank">{{ article.get('title', 'Untitled') }}</a></h3>
+                        <p class="meta">
+                            Source: {{ article.get('source') or article.get('feed_source', 'Unknown source') }} |
+                            Published: {{ article.get('published', 'Unknown date') }}
+                        </p>
+                        {% if summary %}
+                            <div class="summary">
+                                {{ summary.get('summary', '') }}
+                            </div>
+                        {% endif %}
+                    </div>
+                {% endif %}
+            </div>
+        {% endfor %}
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const themeToggle = document.getElementById('theme-toggle');
+    const html = document.documentElement;
+    const icon = themeToggle.querySelector('i');
+    
+    // Check for saved theme preference, default to light
+    const savedTheme = localStorage.getItem('theme') || 'light';
+    html.setAttribute('data-theme', savedTheme);
+    updateIcon(savedTheme);
+    
+    themeToggle.addEventListener('click', function() {
+        const currentTheme = html.getAttribute('data-theme');
+        const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+        
+        html.setAttribute('data-theme', newTheme);
+        localStorage.setItem('theme', newTheme);
+        updateIcon(newTheme);
+    });
+    
+    function updateIcon(theme) {
+        icon.className = theme === 'light' ? 'fas fa-moon' : 'fas fa-sun';
+    }
+});
+</script>
+</body>
+</html>
