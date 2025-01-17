@@ -27,7 +27,6 @@ document.addEventListener('DOMContentLoaded', function() {
             if (welcomeMessage) {
                 welcomeMessage.style.display = 'none';
             }
-            
             const loadingDiv = document.createElement('div');
             loadingDiv.className = 'loading';
             loadingDiv.textContent = 'Loading content...';
@@ -45,13 +44,34 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Create an iframe to display the content
                 const iframe = document.createElement('iframe');
                 iframe.srcdoc = data.content;
-                
+
                 // Add transition effect
                 iframe.style.opacity = '0';
                 iframe.style.transition = 'opacity 0.3s ease';
-                
+
                 contentView.innerHTML = '';
                 contentView.appendChild(iframe);
+
+                // Handle link clicks within the iframe
+                iframe.onload = function() {
+                    const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                    iframeDoc.querySelectorAll('a').forEach(link => {
+                        link.addEventListener('click', function(e) {
+                            e.preventDefault();
+                            const href = this.getAttribute('href');
+                            if (href && !href.startsWith('#')) {
+                                window.open(href, '_blank');
+                            } else if (href && href.startsWith('#')) {
+                                // Handle internal anchor links
+                                const targetId = href.substring(1);
+                                const targetElement = iframeDoc.getElementById(targetId);
+                                if (targetElement) {
+                                    targetElement.scrollIntoView({ behavior: 'smooth' });
+                                }
+                            }
+                        });
+                    });
+                };
 
                 // Trigger reflow and add opacity
                 setTimeout(() => {
@@ -113,7 +133,7 @@ document.addEventListener('DOMContentLoaded', function() {
     function handleMobileView() {
         const timelineContainer = document.querySelector('.timeline-container');
         const contentContainer = document.querySelector('.content-container');
-        
+
         if (window.innerWidth <= 768) {
             timelineItems.forEach(item => {
                 item.addEventListener('click', () => {

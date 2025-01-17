@@ -31,18 +31,34 @@ A modern RSS feed reader that uses AI to generate concise summaries of articles 
 
 ## Usage
 
-Run the RSS reader:
+### Step 1: Generate RSS Feed Summaries
+
+First, run the RSS reader to fetch and summarize articles:
 ```bash
 python rss_reader.py
 ```
 
-The script will:
+This will:
 1. Fetch articles from configured RSS feeds
-2. Generate AI-powered summaries
+2. Generate AI-powered summaries using Claude
 3. Cluster similar articles together
-4. Create an HTML output with summaries and source links
+4. Create an HTML summary in `output/rss_summary_[timestamp].html`
 
-Output will be saved to `output/rss_summary_[timestamp].html`
+### Step 2: View Curated Results
+
+To view the generated summaries in a clean web interface:
+```bash
+python webserver.py
+```
+
+Then:
+1. Open your browser and navigate to `http://localhost:5000`
+2. Browse through the curated article summaries
+3. Use the agenda navigation to explore article clusters
+4. Toggle between light and dark themes using the theme button
+5. Click article titles to read the full content
+
+Note: Run `rss_reader.py` whenever you want to fetch and summarize new articles, then refresh your browser to see the updates.
 
 ## Configuration
 

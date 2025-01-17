@@ -610,6 +610,53 @@ class RSSReader:
             logging.error(f"Error loading feed URLs: {str(e)}")
             return []
 
+    def process_cluster_summaries(self, clusters):
+        processed_clusters = []
+        for i, cluster in enumerate(clusters, 1):
+            try:
+                if not cluster:
+                    logging.warning(f"Empty cluster {i}, skipping")
+                    continue
+
+                logging.info(f"Processing cluster {i}/{len(clusters)} with {len(cluster)} articles")
+
+                if len(cluster) > 1:
+                    # For clusters with multiple articles, generate a combined summary
+                    combined_text = "\n\n".join([
+                        f"Title: {article['title']}\n{article.get('content', '')[:1000]}"
+                        for article in cluster
+                    ])
+
+                    logging.info(f"Generating summary for cluster {i} with {len(cluster)} articles")
+                    cluster_summary = self._generate_summary(combined_text,
+                                                            f"Combined summary of {len(cluster)} related articles",
+                                                            cluster[0]['link'])
+
+                    # Add the cluster summary to each article
+                    for article in cluster:
+                        article['summary'] = cluster_summary
+                        article['cluster_size'] = len(cluster)
+                else:
+                    # Single article
+                    article = cluster[0]
+                    if not article.get('summary'):
+                        logging.info(f"Generating summary for single article: {article['title']}")
+                        article['summary'] = self._generate_summary(
+                            article.get('content', ''),
+                            article['title'],
+                            article['link']
+                        )
+                    article['cluster_size'] = 1
+
+                processed_clusters.append(cluster)
+                logging.info(f"Successfully processed cluster {i}")
+
+            except Exception as cluster_error:
+                logging.error(f"Error processing cluster {i}: {str(cluster_error)}", exc_info=True)
+                continue
+
+        return processed_clusters
+
     def _parse_entry(self, entry):
         """Parse a feed entry into an article."""
         try:
@@ -698,50 +745,7 @@ class RSSReader:
 
             # Now generate summaries for each cluster
             logging.info("Generating summaries for article clusters...")
-            processed_clusters = []
-
-            for i, cluster in enumerate(clusters, 1):
-                try:
-                    if not cluster:
-                        logging.warning(f"Empty cluster {i}, skipping")
-                        continue
-
-                    logging.info(f"Processing cluster {i}/{len(clusters)} with {len(cluster)} articles")
-
-                    if len(cluster) > 1:
-                        # For clusters with multiple articles, generate a combined summary
-                        combined_text = "\n\n".join([
-                            f"Title: {article['title']}\n{article.get('content', '')[:1000]}"
-                            for article in cluster
-                        ])
-
-                        logging.info(f"Generating summary for cluster {i} with {len(cluster)} articles")
-                        cluster_summary = self._generate_summary(combined_text,
-                                                              f"Combined summary of {len(cluster)} related articles",
-                                                              cluster[0]['link'])
-
-                        # Add the cluster summary to each article
-                        for article in cluster:
-                            article['summary'] = cluster_summary
-                            article['cluster_size'] = len(cluster)
-                    else:
-                        # Single article
-                        article = cluster[0]
-                        if not article.get('summary'):
-                            logging.info(f"Generating summary for single article: {article['title']}")
-                            article['summary'] = self._generate_summary(
-                                article.get('content', ''),
-                                article['title'],
-                                article['link']
-                            )
-                        article['cluster_size'] = 1
-
-                    processed_clusters.append(cluster)
-                    logging.info(f"Successfully processed cluster {i}")
-
-                except Exception as cluster_error:
-                    logging.error(f"Error processing cluster {i}: {str(cluster_error)}", exc_info=True)
-                    continue
+            processed_clusters = self.process_cluster_summaries(clusters)
 
             if not processed_clusters:
                 logging.error("No clusters were successfully processed")
@@ -926,146 +930,38 @@ class RSSReader:
             }
 
     def generate_html_output(self, clusters):
-        """Generate HTML output from the processed articles."""
+        """Generate HTML output from the processed clusters."""
         try:
-            if not clusters:
-                logging.error("No clusters provided to generate_html_output")
-                return None
+            from flask import Flask, render_template
+            from datetime import datetime
+            import os
 
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            # Create output directory if it doesn't exist
             output_dir = os.path.join(os.path.dirname(__file__), 'output')
             os.makedirs(output_dir, exist_ok=True)
+
+            # Generate timestamp and filename
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             output_file = os.path.join(output_dir, f'rss_summary_{timestamp}.html')
 
-            logging.info(f"Starting HTML generation for {len(clusters)} clusters")
-            html_content = []
+            app = Flask(__name__)
 
-            for i, cluster in enumerate(clusters, 1):
-                try:
-                    if not cluster:  # Skip empty clusters
-                        logging.warning(f"Skipping empty cluster {i}")
-                        continue
-
-                    logging.info(f"Processing cluster {i}/{len(clusters)} with {len(cluster)} articles")
-
-                    if len(cluster) > 1:
-                        # Multiple articles in cluster
-                        html_content.append('<div class="cluster">')
-
-                        # Get the cluster summary and headline
-                        first_article = cluster[0]
-                        if first_article and isinstance(first_article, dict):
-                            summary = first_article.get('summary', {})
-                            if summary:
-                                # Use the generated headline as the cluster title
-                                headline = summary.get('headline', f'Cluster of {len(cluster)} Related Articles')
-                                html_content.append(f'<h2>{headline}</h2>')
-
-                                html_content.append('<div class="cluster-summary">')
-                                summary_text = summary.get('summary', '') if isinstance(summary, dict) else str(summary)
-                                html_content.append(f'<p>{summary_text}</p>')
-                                html_content.append('</div>')
-                        else:
-                            html_content.append(f'<h2>Cluster of {len(cluster)} Related Articles</h2>')
-
-                        # Add individual articles
-                        for article in cluster:
-                            if not isinstance(article, dict):
-                                logging.warning(f"Skipping invalid article in cluster {i}: {type(article)}")
-                                continue
-
-                            html_content.append('<div class="article">')
-                            title = article.get('title', 'Untitled')
-                            link = article.get('link', '#')
-                            source = article.get('feed_source', 'Unknown source')
-                            published = article.get('published', 'Unknown date')
-
-                            html_content.append(f'<h3><a href="{link}">{title}</a></h3>')
-                            html_content.append(f'<p class="meta">Source: {source} | Published: {published}</p>')
-                            html_content.append('</div>')
-                        html_content.append('</div>')
-                    else:
-                        # Single article
-                        article = cluster[0]
-                        if not isinstance(article, dict):
-                            logging.warning(f"Skipping invalid single article: {type(article)}")
-                            continue
-
-                        html_content.append('<div class="article">')
-                        title = article.get('title', 'Untitled')
-                        link = article.get('link', '#')
-                        source = article.get('feed_source', 'Unknown source')
-                        published = article.get('published', 'Unknown date')
-
-                        html_content.append(f'<h2><a href="{link}">{title}</a></h2>')
-                        html_content.append(f'<p class="meta">Source: {source} | Published: {published}</p>')
-
-                        summary = article.get('summary', {})
-                        if summary:
-                            html_content.append('<div class="summary">')
-                            summary_text = summary.get('summary', '') if isinstance(summary, dict) else str(summary)
-                            html_content.append(f'<p>{summary_text}</p>')
-                            html_content.append('</div>')
-                        html_content.append('</div>')
-
-                except Exception as cluster_error:
-                    logging.error(f"Error processing cluster {i}: {str(cluster_error)}", exc_info=True)
-                    continue
-
-            if not html_content:
-                logging.error("No HTML content generated")
-                return None
-
-            logging.info(f"Generated {len(html_content)} HTML content blocks")
-
-            # HTML template without indentation to avoid formatting issues
-            html_template = r'''<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>RSS Feed Summary</title>
-<style>
-body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; max-width: 1200px; margin: 0 auto; padding: 20px; background: #f5f5f5; }}
-.cluster {{ background: white; border-radius: 8px; padding: 20px; margin-bottom: 30px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
-.cluster > h2 {{ color: #2c5282; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px; margin-top: 0; }}
-.cluster-summary {{ background: #f8fafc; border-left: 4px solid #4299e1; padding: 15px; margin: 15px 0; }}
-.article {{ background: white; border-radius: 8px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
-.article h2, .article h3 {{ margin-top: 0; color: #2d3748; }}
-.article a {{ color: #2b6cb0; text-decoration: none; }}
-.article a:hover {{ text-decoration: underline; }}
-.meta {{ font-size: 0.9em; color: #718096; margin-bottom: 10px; }}
-.summary {{ background: #f8fafc; border-left: 4px solid #4299e1; padding: 15px; margin-top: 15px; }}
-@media (max-width: 768px) {{ body {{ padding: 10px; }} .article, .cluster {{ padding: 15px; }} }}
-</style>
-</head>
-<body>
-<h1>RSS Feed Summary - {timestamp}</h1>
-{content}
-</body>
-</html>'''
-
-            try:
-                # Write the HTML file
-                final_html = html_template.format(
-                    timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    content='\n'.join(html_content)
+            with app.app_context():
+                html_content = render_template(
+                    'feed_summary.html',
+                    clusters=clusters,
+                    timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 )
 
                 with open(output_file, 'w', encoding='utf-8') as f:
-                    f.write(final_html)
-                    logging.info(f"Wrote {len(final_html)} bytes to HTML file")
+                    f.write(html_content)
 
-                logging.info(f"✅ Output written to {output_file}")
+                logging.info(f"Successfully wrote HTML output to {output_file}")
                 return output_file
 
-            except Exception as write_error:
-                logging.error(f"Error writing HTML file: {str(write_error)}", exc_info=True)
-                return None
-
         except Exception as e:
-            logging.error(f"Error in generate_html_output: {str(e)}", exc_info=True)
-            return None
+            logging.error(f"Error generating HTML output: {str(e)}", exc_info=True)
+            return False
 
 
 def main():
