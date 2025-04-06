@@ -1,7 +1,6 @@
 import os
 import sys
 import time
-import math
 import logging
 import psutil
 import hashlib
@@ -13,34 +12,24 @@ import datetime
 import pytz
 import functools
 import feedparser
-import html2text
-import sys
-import newspaper
-from newspaper import Article, Config
-import webbrowser
 from bs4 import BeautifulSoup
-from email.utils import parsedate_to_datetime
 from datetime import datetime, timedelta
 from sentence_transformers import SentenceTransformer
-from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
 from tqdm import tqdm
 from dotenv import load_dotenv
 from urllib.parse import urlparse
-from sklearn.cluster import DBSCAN  # Import DBSCAN for clustering
+from sklearn.cluster import AgglomerativeClustering
 import concurrent.futures
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from ratelimit import limits, sleep_and_retry
-import asyncio
-from typing import List, Dict, Any, Optional
-import torch
-from collections import defaultdict
-from sklearn.cluster import AgglomerativeClustering
+import threading
 import json
 import re
 import anthropic
+import torch
 
 # Load environment variables from .env file
 load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
@@ -207,75 +196,81 @@ class SummaryCache:
         os.makedirs(cache_dir, exist_ok=True)
         self.cache_file = os.path.join(cache_dir, 'summary_cache.json')
         self.cache = {}
+        self.lock = threading.RLock()  # Use RLock for thread safety
         self._load_cache()
 
     def _load_cache(self):
         """Load the cache from disk, creating an empty one if it doesn't exist."""
-        try:
-            if os.path.exists(self.cache_file):
-                with open(self.cache_file, 'r') as f:
-                    data = json.load(f)
-                    # Convert any string values to dict format
-                    for key, value in data.items():
-                        if isinstance(value, str):
-                            self.cache[key] = {
-                                'summary': value,
-                                'timestamp': time.time()
-                            }
-                        else:
-                            self.cache[key] = value
-                # Clean up expired entries
-                self._cleanup_cache()
-        except Exception as e:
-            logging.error(f"Error loading cache: {e}")
-            self.cache = {}
+        with self.lock:
+            try:
+                if os.path.exists(self.cache_file):
+                    with open(self.cache_file, 'r') as f:
+                        data = json.load(f)
+                        # Convert any string values to dict format
+                        for key, value in data.items():
+                            if isinstance(value, str):
+                                self.cache[key] = {
+                                    'summary': value,
+                                    'timestamp': time.time()
+                                }
+                            else:
+                                self.cache[key] = value
+                    # Clean up expired entries
+                    self._cleanup_cache()
+            except Exception as e:
+                logging.error(f"Error loading cache: {e}")
+                self.cache = {}
 
     def _save_cache(self):
         """Save the current cache to disk in JSON format."""
-        try:
-            with open(self.cache_file, 'w') as f:
-                json.dump(self.cache, f, indent=2)
-        except Exception as e:
-            logging.error(f"Error saving cache: {e}")
+        with self.lock:
+            try:
+                with open(self.cache_file, 'w') as f:
+                    json.dump(self.cache, f, indent=2)
+            except Exception as e:
+                logging.error(f"Error saving cache: {e}")
 
     def _cleanup_cache(self):
         """Remove expired entries and enforce maximum cache size."""
-        current_time = time.time()
-        # Remove expired entries
-        self.cache = {
-            k: v for k, v in self.cache.items()
-            if isinstance(v, dict) and current_time - v.get('timestamp', 0) < self.cache_duration
-        }
+        with self.lock:
+            current_time = time.time()
+            # Remove expired entries
+            self.cache = {
+                k: v for k, v in self.cache.items()
+                if isinstance(v, dict) and current_time - v.get('timestamp', 0) < self.cache_duration
+            }
 
-        # If still too large, remove oldest entries
-        if len(self.cache) > self.max_cache_size:
-            sorted_items = sorted(
-                self.cache.items(),
-                key=lambda x: x[1].get('timestamp', 0) if isinstance(x[1], dict) else 0
-            )
-            self.cache = dict(sorted_items[-self.max_cache_size:])
+            # If still too large, remove oldest entries
+            if len(self.cache) > self.max_cache_size:
+                sorted_items = sorted(
+                    self.cache.items(),
+                    key=lambda x: x[1].get('timestamp', 0) if isinstance(x[1], dict) else 0
+                )
+                self.cache = dict(sorted_items[-self.max_cache_size:])
 
     def get(self, text):
         """Retrieve cached summary for a given text."""
-        key = self._hash_text(text)
-        if key in self.cache:
-            entry = self.cache[key]
-            if isinstance(entry, dict) and time.time() - entry.get('timestamp', 0) < self.cache_duration:
-                return entry
-            else:
-                del self.cache[key]
-        return None
+        with self.lock:
+            key = self._hash_text(text)
+            if key in self.cache:
+                entry = self.cache[key]
+                if isinstance(entry, dict) and time.time() - entry.get('timestamp', 0) < self.cache_duration:
+                    return entry
+                else:
+                    del self.cache[key]
+            return None
 
     def set(self, text, summary):
         """Cache a summary for a given text."""
-        key = self._hash_text(text)
-        if isinstance(summary, str):
-            summary = {'summary': summary}
-        summary['timestamp'] = time.time()
-        self.cache[key] = summary
-        if len(self.cache) > self.max_cache_size:
-            self._cleanup_cache()
-        self._save_cache()
+        with self.lock:
+            key = self._hash_text(text)
+            if isinstance(summary, str):
+                summary = {'summary': summary}
+            summary['timestamp'] = time.time()
+            self.cache[key] = summary
+            if len(self.cache) > self.max_cache_size:
+                self._cleanup_cache()
+            self._save_cache()
 
     def _hash_text(self, text):
         """Generate a hash for the given text to use as a cache key."""
@@ -286,12 +281,13 @@ class SummaryCache:
 
     def clear_cache(self):
         """Completely clear the cache."""
-        self.cache = {}
-        try:
-            os.remove(self.cache_file)
-        except FileNotFoundError:
-            pass
-        self._save_cache()
+        with self.lock:
+            self.cache = {}
+            try:
+                os.remove(self.cache_file)
+            except FileNotFoundError:
+                pass
+            self._save_cache()
 
 
 class ArticleSummarizer:
@@ -316,8 +312,18 @@ class ArticleSummarizer:
 
         return text
 
-    def summarize_article(self, text, force_refresh=False):
-        """Generate a concise summary of the article text."""
+    def summarize_article(self, text, title, url, force_refresh=False):
+        """Generate a concise summary of the article text.
+        
+        Args:
+            text (str): The article text to summarize
+            title (str): The article title
+            url (str): The article URL
+            force_refresh (bool): Whether to force a new summary
+            
+        Returns:
+            dict: The summary with headline and text
+        """
         # Clean the text first
         text = self.clean_text(text)
 
@@ -339,7 +345,7 @@ class ArticleSummarizer:
                 "- Explains why it matters to AI industry followers\n"
                 "- Spells out numbers and uses U.S./U.K. with periods\n\n"
                 f"Article:\n{text}\n\n"
-                f"URL: {article['link']}"
+                f"URL: {url}"
             )
 
             response = self.client.messages.create(
@@ -361,7 +367,7 @@ class ArticleSummarizer:
                 headline = lines[0].strip()
                 summary = lines[1].strip()
             else:
-                headline = article['title']
+                headline = title
                 summary = summary_text
 
             return {
@@ -372,7 +378,7 @@ class ArticleSummarizer:
         except Exception as e:
             logging.error(f"Error generating summary: {str(e)}")
             return {
-                'headline': article['title'],
+                'headline': title,
                 'summary': "Summary generation failed. Please try again later."
             }
 
@@ -410,26 +416,6 @@ def create_session():
     return session
 
 
-def performance_logger(func):
-    """Decorator to log performance metrics of functions."""
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs):
-        start_time = time.time()
-        cpu_start = time.process_time()
-        mem_start = psutil.Process().memory_info().rss
-
-        result = func(*args, **kwargs)
-
-        elapsed = time.time() - start_time
-        cpu_percent = (time.process_time() - cpu_start) / elapsed * 100
-        mem_used = psutil.Process().memory_info().rss - mem_start
-
-        logging.info(f"Performance: {func.__name__} took {elapsed:.4f} seconds (CPU: {cpu_percent:.1f}%, Memory: {mem_used} bytes)")
-
-        return result
-    return wrapper
-
-
 # Rate limit for Anthropic API (5 requests per second)
 CALLS_PER_SECOND = 5
 ANTHROPIC_RATE_LIMIT = limits(calls=CALLS_PER_SECOND, period=1)
@@ -454,21 +440,27 @@ class BatchProcessor:
         self.queue = []
         self.results = []
         self.last_request_time = 0
+        self.lock = threading.Lock()  # Add lock for thread safety
 
     def add(self, item):
         """Add an item to the processing queue."""
-        self.queue.append(item)
-        if len(self.queue) >= self.batch_size:
-            self._process_batch()
+        with self.lock:
+            self.queue.append(item)
+            if len(self.queue) >= self.batch_size:
+                self._process_batch()
 
     def _process_batch(self):
         """Process a batch of items with rate limiting."""
-        if not self.queue:
-            return
-
+        with self.lock:
+            if not self.queue:
+                return
+            
+            batch_to_process = self.queue[:self.batch_size]
+            self.queue = self.queue[self.batch_size:]
+        
         with ThreadPoolExecutor(max_workers=self.batch_size) as executor:
             futures = []
-            for item in self.queue[:self.batch_size]:
+            for item in batch_to_process:
                 # Ensure rate limiting
                 now = time.time()
                 time_since_last = now - self.last_request_time
@@ -488,18 +480,21 @@ class BatchProcessor:
                 try:
                     result = future.result()
                     if result:
-                        self.results.append(result)
+                        with self.lock:
+                            self.results.append(result)
                 except Exception as e:
                     logging.error(f"Error in batch processing: {str(e)}")
 
-        # Remove processed items
-        self.queue = self.queue[self.batch_size:]
-
     def get_results(self):
         """Process remaining items and return all results."""
-        while self.queue:
+        while True:
+            with self.lock:
+                if not self.queue:
+                    break
             self._process_batch()
-        return self.results
+        
+        with self.lock:
+            return self.results
 
 
 class RSSReader:
@@ -523,8 +518,9 @@ class RSSReader:
         self.batch_size = batch_size
         self.batch_delay = batch_delay
         self.session = create_session()
-        self.client = anthropic.Anthropic()
+        self.client = anthropic.Anthropic(api_key=get_env_var('ANTHROPIC_API_KEY'))
         self.batch_processor = BatchProcessor(batch_size=5)  # Process 5 API calls at a time
+        self.summarizer = ArticleSummarizer()
 
         # Initialize sentence transformer and device
         self.model = None
@@ -562,6 +558,7 @@ class RSSReader:
             logging.error(f"Error loading feed URLs: {str(e)}")
             return []
 
+    @track_performance()
     def process_cluster_summaries(self, clusters):
         processed_clusters = []
         for i, cluster in enumerate(clusters, 1):
@@ -718,6 +715,7 @@ class RSSReader:
             logging.error(f"Error processing feeds: {str(e)}", exc_info=True)
             return None
 
+    @track_performance()
     def _process_feed(self, feed_url):
         """Process a single RSS feed."""
         try:
@@ -741,60 +739,9 @@ class RSSReader:
 
     def _generate_summary(self, article_text, title, url):
         """Generate a summary for an article using the Anthropic API."""
-        try:
-            # Generate summary using Claude
-            prompt = (
-                "Summarize this article in 3-4 sentences using active voice and factual tone. "
-                "Follow this structure:\n"
-                "1. First line: Create a descriptive title that captures the key theme or insight. The title should:\n"
-                "   - Be 5-10 words long\n"
-                "   - Use sentence case\n"
-                "   - Focus on the main technological development, business impact, or key finding\n"
-                "   - Be specific rather than generic (e.g. 'OpenAI launches GPT-4 with enhanced reasoning' rather than 'AI company releases new model')\n"
-                "2. Then a blank line\n"
-                "3. Then the summary that:\n"
-                "- Explains what happened in simple language\n"
-                "- Identifies key details for AI developers\n"
-                "- Explains why it matters to AI industry followers\n"
-                "- Spells out numbers and uses U.S./U.K. with periods\n\n"
-                f"Article:\n{article_text}\n\n"
-                f"URL: {url}"
-            )
+        return self.summarizer.summarize_article(article_text, title, url)
 
-            response = self.client.messages.create(
-                model="claude-3-haiku-20240307",
-                max_tokens=400,
-                temperature=0.3,
-                system="You are an expert AI technology journalist. Be concise and factual.",
-                messages=[{
-                    "role": "user",
-                    "content": prompt
-                }]
-            )
-
-            summary_text = response.content[0].text
-
-            # Split into headline and summary
-            lines = summary_text.split('\n', 1)
-            if len(lines) == 2:
-                headline = lines[0].strip()
-                summary = lines[1].strip()
-            else:
-                headline = title
-                summary = summary_text
-
-            return {
-                'headline': headline,
-                'summary': summary
-            }
-
-        except Exception as e:
-            logging.error(f"Error generating summary: {str(e)}")
-            return {
-                'headline': title,
-                'summary': "Summary generation failed. Please try again later."
-            }
-
+    @track_performance()
     def _cluster_articles(self, articles):
         """Cluster similar articles together using sentence embeddings."""
         try:
@@ -807,8 +754,8 @@ class RSSReader:
 
             logging.info(f"Clustering {len(articles)} articles")
 
-            # Filter articles by date
-            current_time = datetime.strptime("2025-01-17T10:29:11-05:00", "%Y-%m-%dT%H:%M:%S%z")
+            # Get current date for filtering
+            current_time = datetime.now()
             two_weeks_ago = current_time - timedelta(days=14)
             
             recent_articles = []
@@ -914,78 +861,4 @@ class RSSReader:
             # Fallback: return each article in its own cluster
             return [[article] for article in articles]
 
-    def _get_feed_batches(self):
-        """Generate batches of feeds to process."""
-        logging.info("🚀 Initializing RSS Reader...")
-        logging.info(f"📊 Total Feeds: {len(self.feeds)}")
-        logging.info(f"📦 Batch Size: {self.batch_size}")
-        logging.info(f"⏱️  Batch Delay: {self.batch_delay} seconds")
-
-        total_batches = (len(self.feeds) + self.batch_size - 1) // self.batch_size
-        logging.info(f"🔄 Total Batches: {total_batches}")
-
-        for batch_num in range(total_batches):
-            start_idx = batch_num * self.batch_size
-            end_idx = min((batch_num + 1) * self.batch_size, len(self.feeds))
-            yield {
-                'current': batch_num + 1,
-                'total': total_batches,
-                'start': start_idx + 1,
-                'end': end_idx,
-                'feeds': self.feeds[start_idx:end_idx]
-            }
-
-    def generate_html_output(self, clusters):
-        """Generate HTML output from the processed clusters."""
-        try:
-            from flask import Flask, render_template
-            from datetime import datetime
-            import os
-
-            # Create output directory if it doesn't exist
-            output_dir = os.path.join(os.path.dirname(__file__), 'output')
-            os.makedirs(output_dir, exist_ok=True)
-
-            # Generate timestamp and filename
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_file = os.path.join(output_dir, f'rss_summary_{timestamp}.html')
-
-            app = Flask(__name__)
-
-            with app.app_context():
-                html_content = render_template(
-                    'feed_summary.html',
-                    clusters=clusters,
-                    timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                )
-
-                with open(output_file, 'w', encoding='utf-8') as f:
-                    f.write(html_content)
-
-                logging.info(f"Successfully wrote HTML output to {output_file}")
-                return output_file
-
-        except Exception as e:
-            logging.error(f"Error generating HTML output: {str(e)}", exc_info=True)
-            return False
-
-
-def main():
-    """
-    Main function to run the RSS reader.
-    """
-    try:
-        # Initialize and run RSS reader
-        rss_reader = RSSReader()
-        output_file = rss_reader.process_feeds()
-
-        if not output_file:
-            logging.warning("⚠️ No articles found or processed")
-
-    except Exception as e:
-        logging.error(f"❌ Error in main: {str(e)}")
-        traceback.print_exc()
-
-
-if __name__ == "__main__":
-    main()
+    def _get_feed_bat
