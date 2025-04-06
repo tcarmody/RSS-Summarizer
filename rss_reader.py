@@ -1,3 +1,20 @@
+"""
+RSS Reader and Summarizer
+
+This module provides a comprehensive RSS feed reader that fetches articles,
+summarizes them using the Anthropic Claude API, and clusters similar articles together.
+
+Example usage:
+    # Basic usage
+    reader = RSSReader()
+    output_file = reader.process_feeds()
+    
+    # Custom usage with specific feeds
+    feeds = ['https://example.com/rss', 'https://example2.com/rss']
+    reader = RSSReader(feeds=feeds, batch_size=10)
+    output_file = reader.process_feeds()
+"""
+
 import os
 import sys
 import time
@@ -7,29 +24,26 @@ import hashlib
 import requests
 import traceback
 import html
-from typing import Callable, Any, Dict, List, Optional, Union
-import datetime
-import pytz
+import json
+import re
+import threading
 import functools
 import feedparser
+import anthropic
+import torch
 from bs4 import BeautifulSoup
 from datetime import datetime, timedelta
 from sentence_transformers import SentenceTransformer
-import numpy as np
 from tqdm import tqdm
 from dotenv import load_dotenv
 from urllib.parse import urlparse
 from sklearn.cluster import AgglomerativeClustering
-import concurrent.futures
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from ratelimit import limits, sleep_and_retry
-import threading
-import json
-import re
-import anthropic
-import torch
+from typing import Callable, Any, Dict, List, Optional, Union
+from collections import defaultdict
 
 # Load environment variables from .env file
 load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
@@ -49,18 +63,24 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-def get_env_var(var_name, required=True):
-    """Get environment variable with error handling.
+
+def get_env_var(var_name: str, required: bool = True) -> Optional[str]:
+    """
+    Get environment variable with error handling.
 
     Args:
-        var_name (str): Name of environment variable
-        required (bool): Whether the variable is required
+        var_name: Name of environment variable
+        required: Whether the variable is required
 
     Returns:
-        str: Value of environment variable
+        Value of environment variable or None if not required and not found
 
     Raises:
         ValueError: If required variable is not set
+
+    Example:
+        api_key = get_env_var('API_KEY')
+        debug_mode = get_env_var('DEBUG_MODE', required=False)
     """
     value = os.getenv(var_name)
     if required and not value:
@@ -70,27 +90,33 @@ def get_env_var(var_name, required=True):
         )
     return value
 
+
 def track_performance(log_level=logging.INFO, log_to_file=True):
     """
     Decorator to track performance of methods with optional logging.
 
     Args:
-        log_level (int): Logging level (default: logging.INFO)
-        log_to_file (bool): Whether to log performance to a file (default: True)
+        log_level: Logging level (default: logging.INFO)
+        log_to_file: Whether to log performance to a file (default: True)
+
+    Example:
+        @track_performance()
+        def process_data(data):
+            # Processing logic here
+            return result
     """
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             # Prepare performance tracking
             start_time = time.time()
-            start_memory = os.getpid()
-
-            # Track CPU and memory usage
+            process = psutil.Process(os.getpid())
+            
             try:
-                process = psutil.Process(start_memory)
+                # Track CPU and memory usage
                 start_cpu_percent = process.cpu_percent()
                 start_memory_info = process.memory_info()
-            except ImportError:
+            except Exception:
                 start_cpu_percent = None
                 start_memory_info = None
 
@@ -180,15 +206,28 @@ class SummaryCache:
     """
     A caching mechanism for article summaries to reduce redundant API calls
     and improve processing speed.
+
+    This class provides thread-safe caching of article summaries with features like:
+    - File-based persistent storage
+    - Automatic expiration of old entries
+    - Maximum cache size enforcement
+    - MD5 hashing for cache keys
+
+    Example:
+        cache = SummaryCache()
+        summary = cache.get("article text")
+        if not summary:
+            summary = generate_summary("article text")
+            cache.set("article text", summary)
     """
     def __init__(self, cache_dir='.cache', cache_duration=7*24*60*60, max_cache_size=500):
         """
         Initialize the summary cache with configurable settings.
 
         Args:
-            cache_dir (str): Directory to store cache files
-            cache_duration (int): How long to keep summaries (in seconds)
-            max_cache_size (int): Maximum number of entries in cache
+            cache_dir: Directory to store cache files
+            cache_duration: How long to keep summaries (in seconds)
+            max_cache_size: Maximum number of entries in cache
         """
         self.cache_dir = cache_dir
         self.cache_duration = cache_duration
@@ -249,7 +288,15 @@ class SummaryCache:
                 self.cache = dict(sorted_items[-self.max_cache_size:])
 
     def get(self, text):
-        """Retrieve cached summary for a given text."""
+        """
+        Retrieve cached summary for a given text.
+        
+        Args:
+            text: The text to look up in the cache
+            
+        Returns:
+            Cached entry or None if not found or expired
+        """
         with self.lock:
             key = self._hash_text(text)
             if key in self.cache:
@@ -261,7 +308,13 @@ class SummaryCache:
             return None
 
     def set(self, text, summary):
-        """Cache a summary for a given text."""
+        """
+        Cache a summary for a given text.
+        
+        Args:
+            text: The text to use as the cache key
+            summary: The summary to cache (string or dict)
+        """
         with self.lock:
             key = self._hash_text(text)
             if isinstance(summary, str):
@@ -273,14 +326,22 @@ class SummaryCache:
             self._save_cache()
 
     def _hash_text(self, text):
-        """Generate a hash for the given text to use as a cache key."""
+        """
+        Generate a hash for the given text to use as a cache key.
+        
+        Args:
+            text: Text to hash
+            
+        Returns:
+            MD5 hash of the text
+        """
         # Convert text to string if it's not already
         if not isinstance(text, str):
             text = str(text)
         return hashlib.md5(text.encode('utf-8')).hexdigest()
 
     def clear_cache(self):
-        """Completely clear the cache."""
+        """Completely clear the cache from memory and disk."""
         with self.lock:
             self.cache = {}
             try:
@@ -291,7 +352,23 @@ class SummaryCache:
 
 
 class ArticleSummarizer:
-    """Summarizes articles using Claude API."""
+    """
+    Summarizes articles using the Anthropic Claude API.
+    
+    This class handles:
+    - Text cleaning and normalization
+    - API communication with Claude
+    - Caching of results to avoid redundant API calls
+    - Tag generation for articles
+    
+    Example:
+        summarizer = ArticleSummarizer()
+        summary = summarizer.summarize_article(
+            "Article text here...",
+            "Article Title",
+            "https://example.com/article"
+        )
+    """
 
     def __init__(self):
         """Initialize the summarizer with Claude API client."""
@@ -299,7 +376,15 @@ class ArticleSummarizer:
         self.summary_cache = SummaryCache()
 
     def clean_text(self, text):
-        """Clean HTML and normalize text for summarization."""
+        """
+        Clean HTML and normalize text for summarization.
+        
+        Args:
+            text: Raw text that may contain HTML
+            
+        Returns:
+            Cleaned and normalized text
+        """
         # Remove HTML tags
         soup = BeautifulSoup(text, 'html.parser')
         text = soup.get_text()
@@ -313,13 +398,14 @@ class ArticleSummarizer:
         return text
 
     def summarize_article(self, text, title, url, force_refresh=False):
-        """Generate a concise summary of the article text.
+        """
+        Generate a concise summary of the article text.
         
         Args:
-            text (str): The article text to summarize
-            title (str): The article title
-            url (str): The article URL
-            force_refresh (bool): Whether to force a new summary
+            text: The article text to summarize
+            title: The article title
+            url: The article URL
+            force_refresh: Whether to force a new summary instead of using cache
             
         Returns:
             dict: The summary with headline and text
@@ -370,10 +456,15 @@ class ArticleSummarizer:
                 headline = title
                 summary = summary_text
 
-            return {
+            result = {
                 'headline': headline,
                 'summary': summary
             }
+            
+            # Cache the result
+            self.summary_cache.set(text, result)
+            
+            return result
 
         except Exception as e:
             logging.error(f"Error generating summary: {str(e)}")
@@ -383,13 +474,26 @@ class ArticleSummarizer:
             }
 
     def generate_tags(self, content):
-        """Generate tags for an article using Claude."""
+        """
+        Generate tags for an article using Claude.
+        
+        Args:
+            content: Article content to extract tags from
+            
+        Returns:
+            list: Generated tags as strings
+        """
         try:
             response = self.client.messages.create(
                 model="claude-3-haiku-20240307",
                 max_tokens=100,
                 temperature=0.7,
-                system="Extract specific entities from the text and return them as tags. Include:\n- Company names (e.g., 'Apple', 'Microsoft')\n- Technologies (e.g., 'ChatGPT', 'iOS 17')\n- People (e.g., 'Tim Cook', 'Satya Nadella')\n- Products (e.g., 'iPhone 15', 'Surface Pro')\nFormat: Return only the tags as a comma-separated list, with no categories or explanations.",
+                system="Extract specific entities from the text and return them as tags. Include:\n"
+                       "- Company names (e.g., 'Apple', 'Microsoft')\n"
+                       "- Technologies (e.g., 'ChatGPT', 'iOS 17')\n"
+                       "- People (e.g., 'Tim Cook', 'Satya Nadella')\n"
+                       "- Products (e.g., 'iPhone 15', 'Surface Pro')\n"
+                       "Format: Return only the tags as a comma-separated list, with no categories or explanations.",
                 messages=[{
                     "role": "user",
                     "content": content
@@ -402,8 +506,17 @@ class ArticleSummarizer:
             return []
 
 
-def create_session():
-    """Create a requests session with retry strategy"""
+def create_http_session():
+    """
+    Create a requests session with retry strategy.
+    
+    Returns:
+        requests.Session: Configured session with retry capability
+    
+    Example:
+        session = create_http_session()
+        response = session.get('https://example.com')
+    """
     session = requests.Session()
     retry_strategy = Retry(
         total=3,
@@ -424,7 +537,17 @@ ANTHROPIC_RATE_LIMIT = limits(calls=CALLS_PER_SECOND, period=1)
 @sleep_and_retry
 @ANTHROPIC_RATE_LIMIT
 def rate_limited_api_call(client: anthropic.Anthropic, messages: List[Dict[str, str]], **kwargs) -> Any:
-    """Make a rate-limited call to the Anthropic API"""
+    """
+    Make a rate-limited call to the Anthropic API.
+    
+    Args:
+        client: Anthropic client instance
+        messages: List of message dicts for the API
+        **kwargs: Additional arguments for the API call
+        
+    Returns:
+        API response
+    """
     return client.messages.create(
         messages=messages,
         **kwargs
@@ -432,9 +555,26 @@ def rate_limited_api_call(client: anthropic.Anthropic, messages: List[Dict[str, 
 
 
 class BatchProcessor:
-    """Process items in batches with rate limiting."""
+    """
+    Process items in batches with rate limiting and thread safety.
+    
+    This class helps manage processing multiple items in parallel while respecting
+    rate limits and ensuring thread safety.
+    
+    Example:
+        processor = BatchProcessor(batch_size=5)
+        processor.add({'func': my_function, 'args': [arg1, arg2], 'kwargs': {'key': 'value'}})
+        results = processor.get_results()
+    """
 
     def __init__(self, batch_size=5, requests_per_second=5):
+        """
+        Initialize the batch processor.
+        
+        Args:
+            batch_size: Number of items to process in a batch
+            requests_per_second: Maximum API calls per second
+        """
         self.batch_size = batch_size
         self.delay = 1.0 / requests_per_second  # Time between requests
         self.queue = []
@@ -443,7 +583,12 @@ class BatchProcessor:
         self.lock = threading.Lock()  # Add lock for thread safety
 
     def add(self, item):
-        """Add an item to the processing queue."""
+        """
+        Add an item to the processing queue.
+        
+        Args:
+            item: Dict containing 'func', 'args', and 'kwargs' keys
+        """
         with self.lock:
             self.queue.append(item)
             if len(self.queue) >= self.batch_size:
@@ -486,7 +631,12 @@ class BatchProcessor:
                     logging.error(f"Error in batch processing: {str(e)}")
 
     def get_results(self):
-        """Process remaining items and return all results."""
+        """
+        Process remaining items and return all results.
+        
+        Returns:
+            list: Results from all processed items
+        """
         while True:
             with self.lock:
                 if not self.queue:
@@ -510,14 +660,26 @@ class RSSReader:
     The class uses Claude API for high-quality summaries and semantic similarity
     for clustering related articles. It implements caching to avoid redundant
     API calls and includes fallback options for summarization.
+    
+    Example:
+        reader = RSSReader()
+        output_file = reader.process_feeds()
+        print(f"Generated output at: {output_file}")
     """
 
     def __init__(self, feeds=None, batch_size=25, batch_delay=15):
-        """Initialize RSSReader with feeds and settings."""
+        """
+        Initialize RSSReader with feeds and settings.
+        
+        Args:
+            feeds: List of RSS feed URLs (optional)
+            batch_size: Number of feeds to process in a batch
+            batch_delay: Delay between batches in seconds
+        """
         self.feeds = feeds or self._load_default_feeds()
         self.batch_size = batch_size
         self.batch_delay = batch_delay
-        self.session = create_session()
+        self.session = create_http_session()
         self.client = anthropic.Anthropic(api_key=get_env_var('ANTHROPIC_API_KEY'))
         self.batch_processor = BatchProcessor(batch_size=5)  # Process 5 API calls at a time
         self.summarizer = ArticleSummarizer()
@@ -541,7 +703,12 @@ class RSSReader:
             raise
 
     def _load_default_feeds(self):
-        """Load feed URLs from the default file."""
+        """
+        Load feed URLs from the default file.
+        
+        Returns:
+            list: List of feed URLs
+        """
         feeds = []
         try:
             with open('rss_feeds.txt', 'r') as f:
@@ -560,6 +727,15 @@ class RSSReader:
 
     @track_performance()
     def process_cluster_summaries(self, clusters):
+        """
+        Process and generate summaries for article clusters.
+        
+        Args:
+            clusters: List of article clusters
+            
+        Returns:
+            list: Processed clusters with summaries
+        """
         processed_clusters = []
         for i, cluster in enumerate(clusters, 1):
             try:
@@ -578,8 +754,8 @@ class RSSReader:
 
                     logging.info(f"Generating summary for cluster {i} with {len(cluster)} articles")
                     cluster_summary = self._generate_summary(combined_text,
-                                                            f"Combined summary of {len(cluster)} related articles",
-                                                            cluster[0]['link'])
+                                                           f"Combined summary of {len(cluster)} related articles",
+                                                           cluster[0]['link'])
 
                     # Add the cluster summary to each article
                     for article in cluster:
@@ -607,34 +783,19 @@ class RSSReader:
         return processed_clusters
 
     def _parse_entry(self, entry, feed_title):
-        """Parse a feed entry into an article."""
+        """
+        Parse a feed entry into an article dictionary.
+        
+        Args:
+            entry: feedparser entry object
+            feed_title: Title of the feed
+            
+        Returns:
+            dict: Parsed article data or None if parsing failed
+        """
         try:
             # Extract content
-            content = ''
-            if hasattr(entry, 'content'):
-                raw_content = entry.content
-                if isinstance(raw_content, list) and raw_content:
-                    content = raw_content[0].get('value', '')
-                elif isinstance(raw_content, str):
-                    content = raw_content
-                elif isinstance(raw_content, (list, tuple)):
-                    content = ' '.join(str(item) for item in raw_content)
-                else:
-                    content = str(raw_content)
-
-            # Fallback to summary
-            if not content and hasattr(entry, 'summary'):
-                content = entry.summary
-
-            # Final fallback to title
-            if not content:
-                content = getattr(entry, 'title', '')
-                logging.warning("Using title as content fallback")
-
-            # Clean content
-            content = html.unescape(content)
-            content = re.sub(r'<[^>]+>', '', content)
-            content = content.strip()
+            content = self._extract_content_from_entry(entry)
 
             return {
                 'title': getattr(entry, 'title', 'No Title'),
@@ -647,10 +808,60 @@ class RSSReader:
         except Exception as e:
             logging.error(f"Error parsing entry: {str(e)}")
             return None
+            
+    def _extract_content_from_entry(self, entry):
+        """
+        Extract and clean content from a feed entry.
+        
+        Args:
+            entry: feedparser entry object
+            
+        Returns:
+            str: Cleaned content text
+        """
+        content = ''
+        # First try to get content
+        if hasattr(entry, 'content'):
+            raw_content = entry.content
+            if isinstance(raw_content, list) and raw_content:
+                content = raw_content[0].get('value', '')
+            elif isinstance(raw_content, str):
+                content = raw_content
+            elif isinstance(raw_content, (list, tuple)):
+                content = ' '.join(str(item) for item in raw_content)
+            else:
+                content = str(raw_content)
+
+        # Fallback to summary
+        if not content and hasattr(entry, 'summary'):
+            content = entry.summary
+
+        # Final fallback to title
+        if not content:
+            content = getattr(entry, 'title', '')
+            logging.warning("Using title as content fallback")
+
+        # Clean content
+        content = html.unescape(content)
+        content = re.sub(r'<[^>]+>', '', content)
+        content = content.strip()
+        
+        return content
 
     @track_performance()
     def process_feeds(self):
-        """Process all RSS feeds and generate summaries."""
+        """
+        Process all RSS feeds and generate summaries.
+        
+        This is the main method that orchestrates the full process:
+        1. Fetch and parse feeds
+        2. Cluster articles
+        3. Generate summaries
+        4. Create HTML output
+        
+        Returns:
+            str: Path to the generated HTML file or None if processing failed
+        """
         try:
             all_articles = []
 
@@ -717,7 +928,15 @@ class RSSReader:
 
     @track_performance()
     def _process_feed(self, feed_url):
-        """Process a single RSS feed."""
+        """
+        Process a single RSS feed.
+        
+        Args:
+            feed_url: URL of the RSS feed
+            
+        Returns:
+            list: Processed articles from the feed
+        """
         try:
             feed = feedparser.parse(feed_url)
             articles = []
@@ -738,12 +957,30 @@ class RSSReader:
             return []
 
     def _generate_summary(self, article_text, title, url):
-        """Generate a summary for an article using the Anthropic API."""
+        """
+        Generate a summary for an article using the Anthropic API.
+        
+        Args:
+            article_text: Text of the article to summarize
+            title: Title of the article
+            url: URL of the article
+            
+        Returns:
+            dict: Summary with headline and content
+        """
         return self.summarizer.summarize_article(article_text, title, url)
 
     @track_performance()
     def _cluster_articles(self, articles):
-        """Cluster similar articles together using sentence embeddings."""
+        """
+        Cluster similar articles together using sentence embeddings.
+        
+        Args:
+            articles: List of articles to cluster
+            
+        Returns:
+            list: List of article clusters
+        """
         try:
             # Log performance metrics
             start_time = time.time()
@@ -754,25 +991,11 @@ class RSSReader:
 
             logging.info(f"Clustering {len(articles)} articles")
 
-            # Get current date for filtering
+            # Filter articles by date
             current_time = datetime.now()
             two_weeks_ago = current_time - timedelta(days=14)
             
-            recent_articles = []
-            for article in articles:
-                try:
-                    article_date = datetime.strptime(article.get('published', ''), '%a, %d %b %Y %H:%M:%S %z')
-                    if article_date >= two_weeks_ago:
-                        recent_articles.append(article)
-                except (ValueError, TypeError):
-                    # If date parsing fails, try alternate format
-                    try:
-                        article_date = datetime.strptime(article.get('published', ''), '%Y-%m-%dT%H:%M:%S%z')
-                        if article_date >= two_weeks_ago:
-                            recent_articles.append(article)
-                    except (ValueError, TypeError):
-                        logging.warning(f"Could not parse date for article: {article.get('title')}. Using current date.")
-                        recent_articles.append(article)  # Include articles with unparseable dates
+            recent_articles = self._filter_recent_articles(articles, two_weeks_ago)
             
             if not recent_articles:
                 logging.warning("No recent articles to cluster")
@@ -784,17 +1007,8 @@ class RSSReader:
             if self.model is None:
                 self._initialize_model()
 
-            # Combine title and first part of content for better context
-            texts = []
-            sources = []
-            for article in recent_articles:
-                title = article.get('title', '')
-                content = article.get('content', '')[:500]  # First 500 chars of content
-                source = article.get('feed_source', '')
-                combined_text = f"{title} {content}".strip()
-                texts.append(combined_text)
-                sources.append(source)
-                logging.debug(f"Processing article for clustering: {title}")
+            # Get article texts and sources for clustering
+            texts, sources = self._prepare_articles_for_clustering(recent_articles)
 
             # Get embeddings with progress bar
             logging.info("Generating embeddings for articles...")
@@ -821,31 +1035,8 @@ class RSSReader:
                 source_key = f"{label}_{sources[idx]}"
                 clusters[source_key].append(recent_articles[idx])
 
-            # Merge small clusters from same source if they're similar
-            merged_clusters = []
-            processed_keys = set()
-
-            for key1 in clusters:
-                if key1 in processed_keys:
-                    continue
-
-                label1 = int(key1.split('_')[0])
-                current_cluster = clusters[key1]
-                processed_keys.add(key1)
-
-                # Look for similar clusters to merge
-                for key2 in clusters:
-                    if key2 in processed_keys:
-                        continue
-
-                    label2 = int(key2.split('_')[0])
-                    # Only merge if they're from different sources
-                    if label1 == label2:
-                        current_cluster.extend(clusters[key2])
-                        processed_keys.add(key2)
-
-                if len(current_cluster) > 0:  # Only add non-empty clusters
-                    merged_clusters.append(current_cluster)
+            # Merge similar clusters
+            merged_clusters = self._merge_similar_clusters(clusters)
 
             # Log clustering results
             logging.info(f"Created {len(merged_clusters)} clusters:")
@@ -860,9 +1051,101 @@ class RSSReader:
             logging.error(f"Error clustering articles: {str(e)}", exc_info=True)
             # Fallback: return each article in its own cluster
             return [[article] for article in articles]
+    
+    def _filter_recent_articles(self, articles, cutoff_date):
+        """
+        Filter articles to include only those from the last two weeks.
+        
+        Args:
+            articles: List of articles to filter
+            cutoff_date: Datetime object representing the cutoff date
+            
+        Returns:
+            list: Filtered list of recent articles
+        """
+        recent_articles = []
+        for article in articles:
+            try:
+                article_date = datetime.strptime(article.get('published', ''), '%a, %d %b %Y %H:%M:%S %z')
+                if article_date >= cutoff_date:
+                    recent_articles.append(article)
+            except (ValueError, TypeError):
+                # If date parsing fails, try alternate format
+                try:
+                    article_date = datetime.strptime(article.get('published', ''), '%Y-%m-%dT%H:%M:%S%z')
+                    if article_date >= cutoff_date:
+                        recent_articles.append(article)
+                except (ValueError, TypeError):
+                    logging.warning(f"Could not parse date for article: {article.get('title')}. Using current date.")
+                    recent_articles.append(article)  # Include articles with unparseable dates
+        return recent_articles
+    
+    def _prepare_articles_for_clustering(self, articles):
+        """
+        Prepare article texts and sources for embedding and clustering.
+        
+        Args:
+            articles: List of articles to prepare
+            
+        Returns:
+            tuple: (texts, sources) for clustering
+        """
+        texts = []
+        sources = []
+        for article in articles:
+            title = article.get('title', '')
+            content = article.get('content', '')[:500]  # First 500 chars of content
+            source = article.get('feed_source', '')
+            combined_text = f"{title} {content}".strip()
+            texts.append(combined_text)
+            sources.append(source)
+            logging.debug(f"Processing article for clustering: {title}")
+        return texts, sources
+    
+    def _merge_similar_clusters(self, clusters):
+        """
+        Merge small clusters from same source if they're similar.
+        
+        Args:
+            clusters: Dictionary of cluster_key -> article list
+            
+        Returns:
+            list: List of merged article clusters
+        """
+        merged_clusters = []
+        processed_keys = set()
+
+        for key1 in clusters:
+            if key1 in processed_keys:
+                continue
+
+            label1 = int(key1.split('_')[0])
+            current_cluster = clusters[key1]
+            processed_keys.add(key1)
+
+            # Look for similar clusters to merge
+            for key2 in clusters:
+                if key2 in processed_keys:
+                    continue
+
+                label2 = int(key2.split('_')[0])
+                # Only merge if they're from different sources
+                if label1 == label2:
+                    current_cluster.extend(clusters[key2])
+                    processed_keys.add(key2)
+
+            if len(current_cluster) > 0:  # Only add non-empty clusters
+                merged_clusters.append(current_cluster)
+                
+        return merged_clusters
 
     def _get_feed_batches(self):
-        """Generate batches of feeds to process."""
+        """
+        Generate batches of feeds to process.
+        
+        Yields:
+            dict: Batch information containing feeds and metadata
+        """
         logging.info("🚀 Initializing RSS Reader...")
         logging.info(f"📊 Total Feeds: {len(self.feeds)}")
         logging.info(f"📦 Batch Size: {self.batch_size}")
@@ -884,7 +1167,15 @@ class RSSReader:
 
     @track_performance()
     def generate_html_output(self, clusters):
-        """Generate HTML output from the processed clusters."""
+        """
+        Generate HTML output from the processed clusters.
+        
+        Args:
+            clusters: List of article clusters with summaries
+            
+        Returns:
+            str: Path to generated HTML file or False if generation failed
+        """
         try:
             from flask import Flask, render_template
             import os
@@ -920,13 +1211,24 @@ class RSSReader:
 def main():
     """
     Main function to run the RSS reader.
+    
+    Example:
+        # Run directly
+        python rss_reader.py
+        
+        # Import and use in another script
+        from rss_reader import RSSReader
+        reader = RSSReader()
+        output_file = reader.process_feeds()
     """
     try:
         # Initialize and run RSS reader
         rss_reader = RSSReader()
         output_file = rss_reader.process_feeds()
 
-        if not output_file:
+        if output_file:
+            logging.info(f"✅ Successfully generated RSS summary: {output_file}")
+        else:
             logging.warning("⚠️ No articles found or processed")
 
     except Exception as e:
