@@ -861,4 +861,78 @@ class RSSReader:
             # Fallback: return each article in its own cluster
             return [[article] for article in articles]
 
-    def _get_feed_bat
+    def _get_feed_batches(self):
+        """Generate batches of feeds to process."""
+        logging.info("🚀 Initializing RSS Reader...")
+        logging.info(f"📊 Total Feeds: {len(self.feeds)}")
+        logging.info(f"📦 Batch Size: {self.batch_size}")
+        logging.info(f"⏱️  Batch Delay: {self.batch_delay} seconds")
+
+        total_batches = (len(self.feeds) + self.batch_size - 1) // self.batch_size
+        logging.info(f"🔄 Total Batches: {total_batches}")
+
+        for batch_num in range(total_batches):
+            start_idx = batch_num * self.batch_size
+            end_idx = min((batch_num + 1) * self.batch_size, len(self.feeds))
+            yield {
+                'current': batch_num + 1,
+                'total': total_batches,
+                'start': start_idx + 1,
+                'end': end_idx,
+                'feeds': self.feeds[start_idx:end_idx]
+            }
+
+    @track_performance()
+    def generate_html_output(self, clusters):
+        """Generate HTML output from the processed clusters."""
+        try:
+            from flask import Flask, render_template
+            import os
+
+            # Create output directory if it doesn't exist
+            output_dir = os.path.join(os.path.dirname(__file__), 'output')
+            os.makedirs(output_dir, exist_ok=True)
+
+            # Generate timestamp and filename
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_file = os.path.join(output_dir, f'rss_summary_{timestamp}.html')
+
+            app = Flask(__name__)
+
+            with app.app_context():
+                html_content = render_template(
+                    'feed_summary.html',
+                    clusters=clusters,
+                    timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                )
+
+                with open(output_file, 'w', encoding='utf-8') as f:
+                    f.write(html_content)
+
+                logging.info(f"Successfully wrote HTML output to {output_file}")
+                return output_file
+
+        except Exception as e:
+            logging.error(f"Error generating HTML output: {str(e)}", exc_info=True)
+            return False
+
+
+def main():
+    """
+    Main function to run the RSS reader.
+    """
+    try:
+        # Initialize and run RSS reader
+        rss_reader = RSSReader()
+        output_file = rss_reader.process_feeds()
+
+        if not output_file:
+            logging.warning("⚠️ No articles found or processed")
+
+    except Exception as e:
+        logging.error(f"❌ Error in main: {str(e)}")
+        traceback.print_exc()
+
+
+if __name__ == "__main__":
+    main()
