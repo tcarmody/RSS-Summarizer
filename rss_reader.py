@@ -753,9 +753,11 @@ class RSSReader:
                     ])
 
                     logging.info(f"Generating summary for cluster {i} with {len(cluster)} articles")
-                    cluster_summary = self._generate_summary(combined_text,
-                                                           f"Combined summary of {len(cluster)} related articles",
-                                                           cluster[0]['link'])
+                    cluster_summary = self._generate_summary(
+                        combined_text,
+                        f"Combined summary of {len(cluster)} related articles",
+                        cluster[0]['link']
+                    )
 
                     # Add the cluster summary to each article
                     for article in cluster:
@@ -1138,7 +1140,7 @@ class RSSReader:
                 merged_clusters.append(current_cluster)
                 
         return merged_clusters
-
+        
     def _get_feed_batches(self):
         """
         Generate batches of feeds to process.
@@ -1164,7 +1166,7 @@ class RSSReader:
                 'end': end_idx,
                 'feeds': self.feeds[start_idx:end_idx]
             }
-
+            
     @track_performance()
     def generate_html_output(self, clusters):
         """
