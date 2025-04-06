@@ -1214,7 +1214,7 @@ def main():
     
     Example:
         # Run directly
-        python rss_reader.py
+        python3 rss_reader.py
         
         # Import and use in another script
         from rss_reader import RSSReader

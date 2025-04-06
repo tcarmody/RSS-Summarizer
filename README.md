@@ -35,7 +35,7 @@ A modern RSS feed reader that uses AI to generate concise summaries of articles 
 
 First, run the RSS reader to fetch and summarize articles:
 ```bash
-python rss_reader.py
+python3 rss_reader.py
 ```
 
 This will:
@@ -48,7 +48,7 @@ This will:
 
 To view the generated summaries in a clean web interface:
 ```bash
-python webserver.py
+python3 webserver.py
 ```
 
 Then:

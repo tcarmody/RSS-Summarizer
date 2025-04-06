@@ -31,7 +31,7 @@ TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 # Run RSS reader with logging
 {
     echo "=== RSS Reader Run: $TIMESTAMP ==="
-    python rss_reader.py
+    python3 rss_reader.py
 } 2>&1 | tee "logs/rss_reader_${TIMESTAMP}.log"
 
 # Clean up old logs and HTML files (older than 7 days)

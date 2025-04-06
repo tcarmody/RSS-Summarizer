@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Check if Python is installed
-if ! command -v python &> /dev/null; then
+if ! command -v python3 &> /dev/null; then
     echo "Error: Python is not installed"
     exit 1
 fi
@@ -26,4 +26,4 @@ mkdir -p .cache
 mkdir -p output
 
 echo "Starting RSS Summarizer web interface..."
-python webserver.py
+python3 webserver.py
